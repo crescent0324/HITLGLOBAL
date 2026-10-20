@@ -5,7 +5,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 const roles = {admin:'管理者（護理長／IT）',nurse:'護理師',caregiver:'照服員',family:'家屬聯絡人',resident:'住民本人'};
 const states = {automatic:'自動處理',awaiting_review:'待人工確認',awaiting_takeover:'待人工接管',human_active:'人工處理中'};
 const actionNames = {observation_added:'新增照護回報',message_submitted:'送出工作人員測試訊息',line_message_simulated:'模擬 LINE 傳入訊息',case_claim:'人工接手',case_reply:'人工回覆',case_resolve:'結案',case_approve:'核准草稿',case_reject:'退回草稿',access_granted:'授予查看權限',access_revoked:'取消查看權限',bed_changed:'床位異動',case_progress_saved:'保存處理進度',handoff_proposed:'提出交班',handoff_accepted:'接收交班',handoff_cancelled:'取消交班',case_progress:'更新進度',case_handoff:'交班操作',case_accept_handoff:'確認接收交班',case_cancel_handoff:'取消交班操作'};
-const appState = {user:null,csrf:null,cards:[],queue:[],page:'board',rid:null,detail:null,toastTimer:null,busy:false,refreshing:false,progressDirty:false,progressCase:null,noteRevision:0};
+const appState = {user:null,csrf:null,cards:[],queue:[],page:'board',rid:null,cid:null,detail:null,toastTimer:null,busy:false,refreshing:false,progressDirty:false,progressCase:null,noteRevision:0};
 const formBaselines = new WeakMap();
 const discardDialog=document.createElement('dialog');
 discardDialog.id='discard-dialog';discardDialog.setAttribute('aria-labelledby','discard-title');
@@ -71,7 +71,7 @@ function roleVisibility() {
 async function sessionView() {
   const result = await api('/api/session'); appState.user=result.user;appState.csrf=result.csrf;
   $('#login-view').hidden=!!result.user;$('#app-view').hidden=!result.user;
-  if(!result.user){ if($('#resident-dialog').open)$('#resident-dialog').close();appState.rid=null;appState.cards=[];appState.queue=[];appState.detail=null;appState.progressDirty=false;
+  if(!result.user){ if($('#resident-dialog').open)$('#resident-dialog').close();appState.rid=null;appState.cid=null;appState.cards=[];appState.queue=[];appState.detail=null;appState.progressDirty=false;
     ['#resident-cards','#stats','#message-list','#audit-list','#observation-list','#case-summary','#draft-list','#account-list','#line-contact-list','#work-queue','#care-followups','#case-context','#saved-progress','#handoff-status','#case-history'].forEach(s=>$(s).replaceChildren());
     return;
   }
@@ -109,7 +109,7 @@ function renderBoard() {
     const v=c.latest?.values||{};
     const assessment=c.assessment;
     const assessmentNote=assessment?`最近已評估紀錄：${esc(date(assessment.observed_at))} · ${esc(assessment.source)}${assessment.id!==c.latest?.id?'<br>最新回報尚未評估，前次評估紀錄仍保留。':''}`:'尚無已評估紀錄。';
-    return `<article class="resident-card"><div class="card-top"><div><span class="bed">${esc(c.ward)} · ${esc(c.bed_id||'未配置床位')}</span><h3>${esc(c.label)}</h3></div><div class="status-label">最近照護評估${badge(assessment?.care_status||(c.latest?'尚未評估':null))}</div></div><div class="card-source">${c.latest?`最近回報 ${esc(date(c.latest.observed_at))}<br>${esc(c.latest.source)}`:'尚無照護回報；不能據此判斷健康狀況。'}</div><div class="vitals">${vital('體溫',v.temperature_c,'°C')}${vital('脈搏',v.pulse_bpm,'次／分')}${vital('血氧',v.spo2_pct,'%')}</div>${c.latest?.note?`<p class="card-note">回報內容：${esc(short(c.latest.note,75))}</p>`:''}<p class="assessment-note">${assessmentNote}</p><div class="card-bottom"><span class="state">訊息：${esc(states[c.state]||c.state)}</span><button data-resident="${esc(c.id)}">查看與處理 →</button></div></article>`;
+    return `<article class="resident-card"><div class="card-top"><div><span class="bed">${esc(c.ward)} · ${esc(c.bed_id||'未配置床位')}</span><h3>${esc(c.label)}</h3></div><div class="status-label">最近照護評估${badge(assessment?.care_status||(c.latest?'尚未評估':null))}</div></div><div class="card-source">${c.latest?`最近回報 ${esc(date(c.latest.observed_at))}<br>${esc(c.latest.source)}`:'尚無照護回報；不能據此判斷健康狀況。'}</div><div class="vitals">${vital('體溫',v.temperature_c,'°C')}${vital('脈搏',v.pulse_bpm,'次／分')}${vital('血氧',v.spo2_pct,'%')}</div>${c.latest?.note?`<p class="card-note">回報內容：${esc(short(c.latest.note,75))}</p>`:''}<p class="assessment-note">${assessmentNote}</p><div class="card-bottom"><span class="state">訊息：${esc(states[c.state]||c.state)}${c.pending_count>1?` · ${c.pending_count} 件`:``}</span><button data-resident="${esc(c.id)}">查看與處理 →</button></div></article>`;
   }).join(''):'<div class="empty">目前沒有符合條件的照護住民。</div>';
   renderQueue();
 }
@@ -119,7 +119,7 @@ function renderQueue() {
   $('#work-queue').innerHTML=queue.length?queue.map(q=>{
     const latest=q.context.recent_inputs.at(-1);const needsHandoff=q.handoff_to_me;
     const button=!assessor()?'查看對話':needsHandoff?'查看交班':q.mine?'繼續處理':q.case_status==='pending'?'查看並接手':'查看案件';
-    return `<article class="work-item ${q.message_risk==='高'?'risk-high':''}"><div class="work-title"><div><span class="bed">${esc(q.bed_id)} · 案件 #${q.case_id}</span><h3>${esc(q.label)}</h3></div><span class="badge ${q.message_risk==='高'?'priority':'track'}">訊息風險 ${esc(q.message_risk)}</span></div><p class="work-reason">${esc(q.context.reason)}</p><p class="work-preview">近期詢問：${esc(short(latest?.text||'無可用訊息紀錄'))}</p><div class="work-meta"><span>${esc(q.context.time_label)} ${esc(duration(q.context.elapsed_seconds))}</span><span>${q.operator?'接手者：'+esc(q.operator):'尚未有人接手'}</span>${q.handoff?`<span>交班待 ${esc(q.handoff.to_name)} 接收${q.handoff.stale?' · 內容需更新':''}</span>`:''}</div><div class="work-bottom"><p>${q.note?'下一步：'+esc(short(q.note.next_action,85)):'接手後請記錄處理進度與下一步。'}</p><button class="secondary" data-work-resident="${esc(q.id)}">${button} →</button></div></article>`;
+    return `<article class="work-item ${q.message_risk==='高'?'risk-high':''}"><div class="work-title"><div><span class="bed">${esc(q.bed_id)} · 案件 #${q.case_id}</span><h3>${esc(q.label)}</h3></div><span class="badge ${q.message_risk==='高'?'priority':'track'}">訊息風險 ${esc(q.message_risk)}</span></div><p class="work-reason">${esc(q.contact_label)}${q.contact_active?'':' · 配對已撤銷'}<br>${esc(q.context.reason)}</p><p class="work-preview">近期詢問：${esc(short(latest?.text||'無可用訊息紀錄'))}</p><div class="work-meta"><span>${esc(q.context.time_label)} ${esc(duration(q.context.elapsed_seconds))}</span><span>${q.operator?'接手者：'+esc(q.operator):'尚未有人接手'}</span>${q.handoff?`<span>交班待 ${esc(q.handoff.to_name)} 接收${q.handoff.stale?' · 內容需更新':''}</span>`:''}</div><div class="work-bottom"><p>${q.note?'下一步：'+esc(short(q.note.next_action,85)):'接手後請記錄處理進度與下一步。'}</p><button class="secondary" data-work-resident="${esc(q.id)}" data-work-conversation="${esc(q.conversation_id)}">${button} →</button></div></article>`;
   }).join(''):'<div class="empty">目前沒有符合篩選條件的訊息待辦。</div>';
   const followups=appState.cards.filter(c=>['需追蹤','需優先確認'].includes(c.assessment?.care_status)).sort((a,b)=>(a.assessment.care_status==='需優先確認'?0:1)-(b.assessment.care_status==='需優先確認'?0:1));
   $('#followup-section').hidden=!followups.length;
@@ -158,29 +158,47 @@ function selectTab(tab) {
   if(tab==='handling'&&!assessor())tab='records';
   $$('.tab-pane').forEach(el=>el.hidden=el.id!==tab+'-tab');$$('[data-tab]').forEach(el=>{el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-selected',String(el.dataset.tab===tab));});
 }
-async function openResident(rid,tab='records') {
+async function openResident(rid,tab='records',cid=null) {
   appState.rid=rid;appState.progressDirty=false;appState.progressCase=null;selectTab(tab);$('#observation-form').reset();$('#message-form').reset();$('#human-reply-form').reset();$('#resolve-form').reset();
   $('#test-tools').open=false;
   const local = new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);$('#observed-time').value=local;
-  await loadResident(); $$('#resident-dialog form').forEach(rememberForm);if(!$('#resident-dialog').open)$('#resident-dialog').showModal();
+  await loadResident(cid,true); $$('#resident-dialog form').forEach(rememberForm);if(!$('#resident-dialog').open)$('#resident-dialog').showModal();
 }
-async function loadResident() {
+async function loadResident(cid=appState.cid,resetConversation=false) {
   if(!appState.rid)return;
-  const data=await api('/api/residents/'+appState.rid);appState.detail=data;
+  const data=await api('/api/residents/'+appState.rid+(cid?'?conversation_id='+encodeURIComponent(cid):''));
+  if(!resetConversation && appState.detail?.selected_conversation.id===data.selected_conversation.id &&
+     appState.detail?.case?.id!==data.case?.id &&
+     ['#human-reply-form','#resolve-form','#progress-form'].some(id=>formChanged($(id)))){
+    throw new Error('案件已變更。本頁未保存內容仍保留，請先另存或清除，再更新紀錄；目前內容不能直接用於新案件。');
+  }
+  if(resetConversation){
+    ['#message-form','#human-reply-form','#resolve-form','#progress-form'].forEach(id=>$(id).reset());
+    appState.progressDirty=false;appState.progressCase=null;
+  }
+  appState.detail=data;appState.cid=data.selected_conversation.id;
+  $('#conversation-select').innerHTML=data.conversations.map(t=>`<option value="${esc(t.id)}">${esc(t.label)}${t.active?'':'（配對已撤銷）'}</option>`).join('');
+  $('#conversation-select').value=appState.cid;
+  const thread=data.selected_conversation;
+  $('#conversation-recipient').textContent=thread.kind==='contact'
+    ? `目前對話：${thread.label}。${thread.active?'人工回覆僅記錄於此聯絡人的對話；尚未傳送 LINE。':'配對已撤銷，暫停新訊息與回覆；既有紀錄保留供院內處理。'}`
+    : '院內測試與舊版紀錄，沒有對外收件者。聯絡人對話請由上方選單切換。';
   $('#detail-synced').textContent='此視窗讀取於 '+date(new Date().toISOString())+'；按「更新紀錄」取得後續變更。';
   $('#resident-title').textContent=data.resident.label;$('#resident-code').textContent=`${data.resident.ward} · ${data.resident.bed_id} · ${data.resident.id}`;
   $('#observation-list').innerHTML=data.observations.length?data.observations.map(o=>`<article class="observation"><header><strong>${esc(date(o.observed_at))} · ${esc(o.source)}</strong>${badge(o.care_status)}</header><div class="vitals">${vital('體溫',o.values.temperature_c,'°C')}${vital('脈搏',o.values.pulse_bpm,'次／分')}${vital('血氧',o.values.spo2_pct,'%')}${vital('收縮壓',o.values.systolic_mmhg,'mmHg')}${vital('舒張壓',o.values.diastolic_mmhg,'mmHg')}</div><p>${esc(o.note)}</p><small>來源紀錄 ${esc(o.source_record_id)} · 入庫 ${esc(date(o.received_at))} · 記錄者 ${esc(roles[o.entered_by]||o.entered_by)}</small></article>`).join(''):'<div class="empty">尚無照護紀錄。量測缺值以「—」呈現。</div>';
   renderMessages(data); renderHandling(data);roleVisibility();
+  if(resetConversation)['#message-form','#human-reply-form','#resolve-form','#progress-form'].forEach(id=>rememberForm($(id)));
   if(assessor()) {
     const body=await api('/api/beds');$('#move-bed').innerHTML=body.beds.filter(b=>!b.resident_id||b.resident_id===appState.rid).map(b=>`<option value="${esc(b.id)}" ${b.resident_id===appState.rid?'selected':''}>${esc(b.id)}${b.resident_id?'（目前床位）':'（空床）'}</option>`).join('');
   }
 }
 function renderMessages(data) {
-  const selected=$('#line-actor').value;
+  const thread=data.selected_conversation;
   $('#line-actor').innerHTML=(data.line_contacts||[]).map(u=>`<option value="${esc(u.id)}">${esc(u.display_name)}（${esc(roles[u.role])}）</option>`).join('');
-  if((data.line_contacts||[]).some(u=>u.id===selected))$('#line-actor').value=selected;
-  $('#demo-line-option').disabled=!assessor() || !data.line_contacts?.length;
-  if($('#demo-line-option').disabled)$('#message-channel').value='web';
+  $('#line-actor').value=thread.contact_id||'';
+  $('#message-channel').value=thread.kind==='contact'?'demo_line':'web';
+  $('#message-channel').disabled=true;$('#line-actor').disabled=true;
+  $('#test-tools').hidden=!thread.active || thread.kind==='contact'&&!assessor();
   messageSourceView();
   $('#message-list').innerHTML=data.messages.length?data.messages.map(m=>{
     const incoming=m.actor==='user';
@@ -193,10 +211,11 @@ function renderMessages(data) {
 function messageSourceView() {$('#line-actor-label').hidden=$('#message-channel').value!=='demo_line';}
 function renderHandling(data) {
   const c=data.case;const owns=c?.status==='claimed'&&c.operator===appState.user.display_name;
-  $('#human-reply-form').hidden=!owns;$('#resolve-form').hidden=!owns;
-  $('#case-summary').innerHTML=c?`<div class="case-block"><span class="eyebrow">案件 #${esc(c.id)} · 訊息風險 ${esc(c.trigger_risk)}</span><h3>${esc(states[data.state])}</h3><p>${c.status==='pending'?'接手後可人工回覆；完成後填寫結果並結案。':`目前接手帳號：${esc(c.operator)}。一般訊息會持續記錄於同一案件。`}</p>${c.status==='pending'?'<button class="primary" id="claim-case">接手此案件</button>':''}</div>`:'<div class="empty">目前沒有未結案事件。符合資料範圍的一般詢問可自動回覆摘要。</div>';
+  $('#human-reply-form').hidden=!owns||!data.selected_conversation.active;$('#resolve-form').hidden=!owns;
+  $('#resolve-form button').textContent=data.selected_conversation.active?'結案並恢復自動處理':'結案並保留配對停用';
+  $('#case-summary').innerHTML=c?`<div class="case-block"><span class="eyebrow">案件 #${esc(c.id)} · 訊息風險 ${esc(c.trigger_risk)}</span><h3>${esc(states[data.state])}</h3><p>${!data.selected_conversation.active?'配對已撤銷；可依權限接手、記錄進度或結案，無法送出回覆。':c.status==='pending'?'接手後可人工回覆；完成後填寫結果並結案。':`目前接手帳號：${esc(c.operator)}。此聯絡人的一般訊息會持續記錄於同一案件。`}</p>${c.status==='pending'?'<button class="primary" id="claim-case">接手此案件</button>':''}</div>`:'<div class="empty">目前沒有未結案事件。是否可自動回覆仍依聯絡人配對、風險與資料範圍判定。</div>';
   renderWorkflow(data,owns);
-  $('#draft-list').innerHTML=data.drafts.filter(j=>j.status==='draft').map(j=>`<form class="draft" data-draft="${j.id}"><h3>待審草稿 #${j.id}</h3><label>核准後的回覆<textarea name="text" rows="4" maxlength="2000" required>${esc(j.response_text||'')}</textarea></label><label>審閱紀錄<input name="note" maxlength="1000" required></label><div class="draft-actions"><button class="primary" type="submit" ${owns?'':'disabled'}>核准回覆</button><button class="secondary" type="button" data-reject="${j.id}" ${owns?'':'disabled'}>退回草稿</button></div></form>`).join('');
+  $('#draft-list').innerHTML=data.drafts.filter(j=>j.status==='draft').map(j=>`<form class="draft" data-draft="${j.id}"><h3>待審草稿 #${j.id}</h3><label>核准後的回覆<textarea name="text" rows="4" maxlength="2000" required>${esc(j.response_text||'')}</textarea></label><label>審閱紀錄<input name="note" maxlength="1000" required></label><div class="draft-actions"><button class="primary" type="submit" ${owns&&data.selected_conversation.active?'':'disabled'}>核准回覆</button><button class="secondary" type="button" data-reject="${j.id}" ${owns?'':'disabled'}>退回草稿</button></div></form>`).join('');
   $$('#draft-list form').forEach(rememberForm);
   $('#audit-list').innerHTML=data.audit.map(a=>`<div class="audit-row">${esc(date(a.created_at))} · ${esc(roles[a.actor]||a.actor)} · ${esc(actionNames[a.action]||a.action)}<br>${esc(a.detail)}</div>`).join('')||'<p class="muted">尚無操作紀錄。</p>';
 }
@@ -221,8 +240,9 @@ function renderWorkflow(data,owns) {
   $('#case-history').innerHTML=(w?.history||[]).map(item=>`<div class="history-item"><strong>案件 #${item.id} · ${esc(date(item.closed_at))}</strong><p>處理者：${esc(item.operator||'未記錄')}</p>${item.summary?`<p>已處理：${esc(item.summary)}</p>`:''}<p>結案紀錄：${esc(item.close_note||'未記錄')}</p></div>`).join('')||'<p class="muted small">尚無已結案紀錄。</p>';
 }
 function progressPayload() {return {summary:$('#progress-summary').value,next_action:$('#progress-next').value,waiting_for:$('#progress-waiting').value,revision:appState.noteRevision};}
+function casePayload(payload={}) {return {...payload,conversation_id:appState.cid,case_id:appState.detail?.case?.id};}
 async function caseAction(action,payload={}) {
-  await api(`/api/residents/${appState.rid}/case/${action}`,payload);await loadResident();await refreshBoard();
+  await api(`/api/residents/${appState.rid}/case/${action}`,casePayload(payload));await loadResident();await refreshBoard();
 }
 $('#login-form').addEventListener('submit',event=>{event.preventDefault();perform(async()=>{
   $('#login-error').textContent='';
@@ -234,7 +254,7 @@ $$('[data-page]').forEach(el=>el.addEventListener('click',()=>perform(()=>showPa
 $('#refresh').addEventListener('click',()=>perform(async()=>{await showPage(appState.page);if($('#resident-dialog').open)await loadResident();},$('#refresh')));
 $('#board-filter').addEventListener('change',renderBoard);
 $('#queue-filter').addEventListener('change',renderQueue);
-$('#work-queue').addEventListener('click',event=>{const el=event.target.closest('[data-work-resident]');if(el)perform(()=>openResident(el.dataset.workResident,assessor()?'handling':'messages'),el);});
+$('#work-queue').addEventListener('click',event=>{const el=event.target.closest('[data-work-resident]');if(el)perform(()=>openResident(el.dataset.workResident,assessor()?'handling':'messages',el.dataset.workConversation),el);});
 $('#care-followups').addEventListener('click',event=>{const el=event.target.closest('[data-followup-resident]');if(el)perform(()=>openResident(el.dataset.followupResident,'records'),el);});
 $('#resident-cards').addEventListener('click',event=>{const el=event.target.closest('[data-resident]');if(el)perform(()=>openResident(el.dataset.resident),el);});
 $('#close-dialog').addEventListener('click',closeResident);
@@ -243,7 +263,15 @@ $('#refresh-detail').addEventListener('click',async()=>{
   perform(async()=>{await loadResident();await refreshBoard();},$('#refresh-detail'));
 });
 $('#resident-dialog').addEventListener('cancel',event=>{event.preventDefault();closeResident();});
-$('#resident-dialog').addEventListener('close',()=>{appState.rid=null;});
+$('#resident-dialog').addEventListener('close',()=>{appState.rid=null;appState.cid=null;});
+$('#conversation-select').addEventListener('change',async()=>{
+  const next=$('#conversation-select').value;$('#conversation-select').value=appState.cid;
+  if(appState.busy)return;
+  const forms=['#message-form','#human-reply-form','#resolve-form','#progress-form'].map(id=>$(id));
+  if((forms.some(formChanged)||$$('#draft-list form').some(formChanged)) &&
+     !await confirmDiscard('切換對話會清除尚未保存的訊息、人工回覆與處理進度；照護回報表單保留。'))return;
+  perform(()=>loadResident(next,true),$('#conversation-select'));
+});
 window.addEventListener('beforeunload',event=>{if(unsavedResidentForms()||appState.busy){event.preventDefault();event.returnValue='';}});
 $$('[data-tab]').forEach(el=>el.addEventListener('click',()=>selectTab(el.dataset.tab)));
 $('#observation-form').addEventListener('submit',event=>{event.preventDefault();perform(async()=>{
@@ -251,20 +279,26 @@ $('#observation-form').addEventListener('submit',event=>{event.preventDefault();
   await api(`/api/residents/${appState.rid}/observation`,payload);event.target.reset();$('#observed-time').value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);rememberForm($('#observation-form'));await loadResident();await refreshBoard();toast('照護回報已保存。');
 },$('button[type="submit"]',event.currentTarget));});
 $('#message-form').addEventListener('submit',event=>{event.preventDefault();perform(async()=>{
-  await api(`/api/residents/${appState.rid}/message`,{text:$('#message-text').value,channel:$('#message-channel').value,line_actor:$('#line-actor').value});$('#message-text').value='';await loadResident();rememberForm($('#message-form'));await refreshBoard();toast('測試訊息已寫入本機紀錄，未送往 LINE。');
+  await api(`/api/residents/${appState.rid}/message`,{text:$('#message-text').value,channel:$('#message-channel').value,line_actor:$('#line-actor').value,conversation_id:appState.cid});$('#message-text').value='';await loadResident();rememberForm($('#message-form'));await refreshBoard();toast('測試訊息已寫入本機紀錄，未送往 LINE。');
 },$('button[type="submit"]',event.currentTarget));});
 $('#message-channel').addEventListener('change',messageSourceView);
 $('#case-summary').addEventListener('click',event=>{if(event.target.closest('#claim-case'))perform(()=>caseAction('claim'),event.target);});
 $('#progress-form').addEventListener('input',event=>{if(event.target.id!=='handoff-target'){appState.progressDirty=true;$('#progress-saved').textContent='本頁內容尚未保存。';}});
-$('#progress-form').addEventListener('submit',event=>{event.preventDefault();perform(async()=>{await api(`/api/residents/${appState.rid}/case/progress`,progressPayload());appState.progressDirty=false;await loadResident();await refreshBoard();toast('處理進度已保存。');},$('button[type="submit"]',event.currentTarget));});
+$('#progress-form').addEventListener('submit',event=>{event.preventDefault();perform(async()=>{await api(`/api/residents/${appState.rid}/case/progress`,casePayload(progressPayload()));appState.progressDirty=false;await loadResident();await refreshBoard();toast('處理進度已保存。');},$('button[type="submit"]',event.currentTarget));});
 $('#reload-progress').addEventListener('click',async()=>{
   if(formChanged($('#progress-form'))&&!await confirmDiscard('重新載入將取代本頁尚未保存的進度，並顯示資料庫中已保存的內容。'))return;
   perform(async()=>{await loadResident();loadProgressValues();renderHandling(appState.detail);toast('已載入保存的進度。');},$('#reload-progress'));
 });
-$('#propose-handoff').addEventListener('click',()=>perform(async()=>{if(!$('#progress-form').reportValidity())return;await api(`/api/residents/${appState.rid}/case/handoff`,{...progressPayload(),to_user:$('#handoff-target').value});appState.progressDirty=false;await loadResident();await refreshBoard();toast('交班已提出；對方確認前仍由你負責。');},$('#propose-handoff')));
+$('#propose-handoff').addEventListener('click',()=>perform(async()=>{if(!$('#progress-form').reportValidity())return;await api(`/api/residents/${appState.rid}/case/handoff`,casePayload({...progressPayload(),to_user:$('#handoff-target').value}));appState.progressDirty=false;await loadResident();await refreshBoard();toast('交班已提出；對方確認前仍由你負責。');},$('#propose-handoff')));
 $('#handoff-status').addEventListener('click',event=>{const accept=event.target.closest('#accept-handoff'),cancel=event.target.closest('#cancel-handoff');if(accept)perform(async()=>{await caseAction('accept_handoff',{request_id:Number(accept.dataset.request)});toast('已接收交班，案件持續人工處理。');},accept);if(cancel)perform(async()=>{await caseAction('cancel_handoff');toast('交班已取消。');},cancel);});
 $('#human-reply-form').addEventListener('submit',event=>{event.preventDefault();perform(async()=>{await caseAction('reply',{text:$('#human-reply').value});$('#human-reply').value='';rememberForm($('#human-reply-form'));toast('人工回覆已記錄；案件尚未結案。');},$('button',event.currentTarget));});
-$('#resolve-form').addEventListener('submit',event=>{event.preventDefault();perform(async()=>{await caseAction('resolve',{note:$('#resolve-note').value});$('#resolve-note').value='';rememberForm($('#resolve-form'));toast('案件已結案。');},$('button',event.currentTarget));});
+$('#resolve-form').addEventListener('submit',event=>{event.preventDefault();perform(async()=>{
+  const payload=casePayload({note:$('#resolve-note').value});
+  await api(`/api/residents/${appState.rid}/case/resolve`,payload);
+  $('#resolve-note').value='';rememberForm($('#resolve-form'));
+  appState.progressDirty=false;rememberForm($('#progress-form'));
+  await loadResident(appState.cid,true);await refreshBoard();toast('案件已結案。');
+},$('button',event.currentTarget));});
 $('#draft-list').addEventListener('submit',event=>{event.preventDefault();const form=event.target.closest('[data-draft]');if(form)perform(()=>caseAction('approve',{job_id:Number(form.dataset.draft),...Object.fromEntries(new FormData(form))}),$('button[type="submit"]',form));});
 $('#draft-list').addEventListener('click',event=>{const el=event.target.closest('[data-reject]');if(el){const form=el.closest('form');perform(()=>caseAction('reject',{job_id:Number(el.dataset.reject),note:$('input[name="note"]',form).value}),el);}});
 $('#move-submit').addEventListener('click',()=>perform(async()=>{await api(`/api/residents/${appState.rid}/move`,{bed_id:$('#move-bed').value});await loadResident();await refreshBoard();toast('床位已更新，住民紀錄仍保留。');},$('#move-submit')));

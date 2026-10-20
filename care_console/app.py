@@ -15,13 +15,14 @@ from werkzeug.exceptions import HTTPException
 
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE / 'core'))
-from live import LiveService
 from integration import OfflineLineTransport
 from care_store import CareStore, ROLES, STAFF, ASSESSORS, CSV_FIELDS, stamp
 from workflow import StaffWorkflow
+from conversations import ConversationDirectory, ScopedLiveService, internal_conversation, backup_before_thread_schema
+from werkzeug.exceptions import Conflict
 
 def conversation(rid):
-    return 'demo-care-' + rid
+    return internal_conversation(rid)
 
 def create_app(data_dir=None, provider=None):
     directory = Path(data_dir or BASE / 'runtime')
@@ -38,16 +39,20 @@ def create_app(data_dir=None, provider=None):
     key_path = directory / 'session.key'
     if not key_path.exists():
         key_path.write_text(secrets.token_hex(32), encoding='utf-8')
-    service = LiveService(directory / 'core', transport=OfflineLineTransport(), provider=provider)
+    backup_before_thread_schema(directory)
     store = CareStore(directory)
+    conversations = ConversationDirectory(store)
+    service = ScopedLiveService(directory / 'core', conversations, transport=OfflineLineTransport(), provider=provider)
     workflow = StaffWorkflow(store, service)
     for resident in store.residents(store.user('admin')):
-        service.enroll(conversation(resident['id']), 'simulation')
+        for thread in conversations.list(store.user('admin'), resident['id']):
+            service.enroll(thread['id'], 'simulation')
     app = Flask(__name__)
     app.config.update(SECRET_KEY=key_path.read_text(encoding='utf-8'), MAX_CONTENT_LENGTH=2 * 1024 * 1024,
                       SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Strict',
                       SESSION_COOKIE_NAME='care_console_session', PERMANENT_SESSION_LIFETIME=timedelta(hours=1))
-    app.extensions.update(care_service=service, care_store=store, care_workflow=workflow)
+    app.extensions.update(care_service=service, care_store=store, care_workflow=workflow,
+                          care_conversations=conversations)
     failures = {}
     failure_lock = threading.Lock()
 
@@ -165,15 +170,25 @@ def create_app(data_dir=None, provider=None):
         queue = []
         for resident in store.residents(current):
             observations = store.observations(current, resident['id'], 1)
-            detail = service.detail(conversation(resident['id']))
-            case = detail['case']
-            if case and current['role'] in STAFF:
-                queue.append(workflow.queue_item(current, resident, detail))
+            resident_queue = []
+            with service.lock:
+                for thread in conversations.list(current, resident['id']):
+                    service.enroll(thread['id'], 'simulation')
+                    source = service.detail(thread['id'])
+                    if source['case']:
+                        item = workflow.queue_item(current, resident, source)
+                        item.update(conversation_id=thread['id'], contact_label=thread['label'],
+                                    contact_active=thread['active'], conversation_kind=thread['kind'])
+                        resident_queue.append(item)
+            resident_queue = workflow.sort_queue(resident_queue)
+            queue.extend(resident_queue)
+            first = resident_queue[0] if resident_queue else None
             cards.append(resident | {'latest': observations[0] if observations else None,
                          'assessment': store.latest_assessment(current, resident['id']),
-                         'state': detail['state'], 'pending_case': bool(case),
-                         'case_operator': case['operator'] if case else None,
-                         'risk': detail['conversation']['last_risk'] if detail['conversation'] else None})
+                         'state': first['state'] if first else 'automatic',
+                         'pending_case': bool(resident_queue), 'pending_count': len(resident_queue),
+                         'case_operator': first['operator'] if first else None,
+                         'risk': first['message_risk'] if first else None})
         return jsonify(cards=cards, work_queue=workflow.sort_queue(queue), synchronized_at=stamp(), mode='模擬院內資料／本機體驗',
                        ai_enabled=service.settings.public()['ai_enabled'],
                        line_mode='本機流程模擬，未連接真實 LINE',
@@ -185,7 +200,11 @@ def create_app(data_dir=None, provider=None):
         current = user()
         store.require(current, rid)
         resident = next(r for r in store.residents(current) if r['id'] == rid)
-        source = service.detail(conversation(rid))
+        with service.lock:
+            threads = conversations.list(current, rid)
+            selected = conversations.describe(current, rid, request.args.get('conversation_id'))
+            service.enroll(selected['id'], 'simulation')
+            source = service.detail(selected['id'])
         authors = store.authors(current, rid)
         messages = [dict(m) | {'author': authors.get(m['event_id'], {}).get('display_name'),
                               'input_channel': authors.get(m['event_id'], {}).get('channel')}
@@ -197,6 +216,7 @@ def create_app(data_dir=None, provider=None):
             drafts = [{k: j.get(k) for k in ('id', 'status', 'mode', 'response_text', 'error', 'created_at')}
                       for j in source['generations']]
         return jsonify(resident=resident, observations=store.observations(current, rid),
+                       conversations=threads, selected_conversation=selected,
                        messages=messages, case=case_view, state=source['state'], drafts=drafts,
                        workflow=workflow.view(current,rid,source) if current['role'] in STAFF else None,
                        line_contacts=store.line_contacts(current,rid) if current['role'] in ASSESSORS else [],
@@ -227,13 +247,19 @@ def create_app(data_dir=None, provider=None):
             store.require(actor, rid)
         event = 'care-' + secrets.token_hex(16)
         with service.lock:
+            if channel == 'demo_line':
+                thread_id = conversations.contact_thread(current, rid, actor['id'])
+            else:
+                thread_id = conversation(rid)
+            if 'conversation_id' in data and data['conversation_id'] != thread_id:
+                raise Conflict('測試訊息來源與目前對話不符，請重新選擇對話。')
             store.record_author(actor, rid, event, channel)
-            service.enroll(conversation(rid), 'simulation')
-            result = service.receive(conversation(rid), text.strip(), event)
+            service.enroll(thread_id, 'simulation')
+            result = service.receive(thread_id, text.strip(), event)
             with store.db() as db:
                 store.log(db, current, 'line_message_simulated' if channel=='demo_line' else 'message_submitted',
-                          rid, 'channel=' + channel + '; input_identity=' + actor['id'])
-        return jsonify(result=result, actual_line_sent=False)
+                          rid, 'channel=' + channel + '; input_identity=' + actor['id'] + '; conversation=' + thread_id)
+        return jsonify(result=result, actual_line_sent=False, conversation_id=thread_id)
 
     @app.post('/api/residents/<rid>/observation')
     @roles(*STAFF)
@@ -249,13 +275,19 @@ def create_app(data_dir=None, provider=None):
         store.require(current, rid)
         data = json_body()
         with service.lock:
-            case = service.detail(conversation(rid))['case']
+            selected = conversations.describe(current, rid, data.get('conversation_id'))
+            thread_id = selected['id']
+            case = service.detail(thread_id)['case']
             if not case:
                 raise ValueError('目前沒有待處理案件。')
+            if type(data.get('case_id')) is not int or data['case_id'] != case['id']:
+                raise Conflict('案件已變更，請更新紀錄後再操作。')
+            if action in {'reply', 'approve'} and not selected['active']:
+                raise PermissionError('聯絡人配對已撤銷，不能回覆或核准草稿。')
             if action == 'claim':
                 service.claim(case['id'], current['display_name'])
             elif action == 'accept_handoff':
-                workflow.accept(current, rid, data.get('request_id'))
+                workflow.accept(current, rid, data.get('request_id'), thread_id)
             else:
                 if case['status'] != 'claimed' or case['operator'] != current['display_name']:
                     raise PermissionError('請由目前接手的帳號處理；其他帳號不能代為操作。')
@@ -272,18 +304,18 @@ def create_app(data_dir=None, provider=None):
                     note = data.get('note')
                     if not isinstance(note, str) or not note.strip() or len(note) > 1000:
                         raise ValueError('請填寫 1 至 1000 字的處理結果。')
-                    workflow.resolve(current, rid, note.strip())
+                    workflow.resolve(current, rid, note.strip(), thread_id)
                 elif action == 'progress':
-                    workflow.save_note(current, rid, data)
+                    workflow.save_note(current, rid, data, thread_id)
                 elif action == 'handoff':
-                    workflow.propose(current, rid, data)
+                    workflow.propose(current, rid, data, thread_id)
                 elif action == 'cancel_handoff':
-                    workflow.cancel(current, rid)
+                    workflow.cancel(current, rid, thread_id)
                 elif action in {'approve', 'reject'}:
                     job_id = data.get('job_id')
-                    jobs = service.detail(conversation(rid))['generations']
+                    jobs = service.detail(thread_id)['generations']
                     if type(job_id) is not int or not any(j['id'] == job_id for j in jobs):
-                        raise PermissionError('草稿與目前住民不符。')
+                        raise PermissionError('草稿與目前聯絡人對話不符。')
                     note = data.get('note', '')
                     text = data.get('text', '')
                     if not isinstance(note, str) or not note.strip() or len(note) > 1000:
@@ -294,7 +326,8 @@ def create_app(data_dir=None, provider=None):
                 else:
                     raise ValueError('案件操作無效。')
             with store.db() as db:
-                store.log(db, current, 'case_' + action, rid, 'case=' + str(case['id']))
+                store.log(db, current, 'case_' + action, rid,
+                          'case=' + str(case['id']) + '; conversation=' + thread_id)
         return jsonify(ok=True)
 
     @app.post('/api/residents/<rid>/move')
@@ -344,6 +377,10 @@ def create_app(data_dir=None, provider=None):
             raise ValueError('請提供授權狀態。')
         with service.lock:
             store.grant(user(), data.get('user_id'), data.get('resident_id'), data['allowed'])
+            for thread in conversations.list(user(), data['resident_id']):
+                if thread['contact_id'] == data['user_id'] and not thread['active']:
+                    with service.db() as db:
+                        service.cancel_jobs(db, thread['id'], '聯絡人配對已撤銷，既有生成工作失效。')
         return jsonify(ok=True)
 
     @app.post('/api/backup')

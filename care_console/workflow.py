@@ -48,8 +48,12 @@ class StaffWorkflow:
         if user['role'] not in (ASSESSORS if assessor else STAFF):
             raise PermissionError('此資訊或操作僅限已授權工作人員。')
 
-    def current_case(self, db, rid):
-        row = db.execute("SELECT * FROM cases WHERE conversation_id=? AND status!='closed'", ('demo-care-'+rid,)).fetchone()
+    def current_case(self, db, rid, conversation_id=None):
+        cid = conversation_id or 'demo-care-'+rid
+        if cid != 'demo-care-'+rid and not db.execute(
+                'SELECT 1 FROM care.contact_conversations WHERE id=? AND resident_id=?', (cid, rid)).fetchone():
+            raise PermissionError('對話與目前住民不符。')
+        row = db.execute("SELECT * FROM cases WHERE conversation_id=? AND status!='closed'", (cid,)).fetchone()
         if not row:
             raise ValueError('目前沒有未結案案件。')
         return dict(row)
@@ -94,7 +98,8 @@ class StaffWorkflow:
             peers = [dict(r) for r in db.execute("SELECT id,display_name FROM care.users WHERE role IN ('admin','nurse') AND id!=?", (user['id'],))]
             history = [dict(r) for r in db.execute('''SELECT c.id,c.closed_at,c.close_note,c.operator,
                 n.summary,n.next_action,n.waiting_for FROM cases c LEFT JOIN care.case_notes n ON n.case_id=c.id
-                WHERE c.conversation_id=? AND c.status='closed' ORDER BY c.id DESC LIMIT 5''', ('demo-care-'+rid,))]
+                WHERE c.conversation_id=? AND c.status='closed' ORDER BY c.id DESC LIMIT 5''',
+                                     (source['conversation']['id'],))]
         return {'context':self.context(source),'note':dict(note) if note else None,
                 'handoff':handoff,'peers':peers,'history':history}
 
@@ -136,20 +141,20 @@ class StaffWorkflow:
         db.execute("UPDATE care.handoff_requests SET status='cancelled' WHERE case_id=? AND status='pending'",(case['id'],))
         self.log(db,user,'case_progress_saved',rid,'case='+str(case['id']))
 
-    def save_note(self, user, rid, data):
+    def save_note(self, user, rid, data, conversation_id=None):
         self.require_staff(user,rid,True);note=self.validated_note(data)
         with self.transaction() as db:
-            case=self.current_case(db,rid);self.require_owner(user,case)
+            case=self.current_case(db,rid,conversation_id);self.require_owner(user,case)
             self.save_note_in(db,user,rid,case,note)
 
-    def propose(self, user, rid, data):
+    def propose(self, user, rid, data, conversation_id=None):
         self.require_staff(user,rid,True);note=self.validated_note(data)
         target=self.store.user(data.get('to_user'))
         if not target or target['role'] not in ASSESSORS or target['id']==user['id']:
             raise ValueError('請選擇另一位可接班的工作人員。')
         self.store.require(target,rid)
         with self.transaction() as db:
-            case=self.current_case(db,rid);self.require_owner(user,case)
+            case=self.current_case(db,rid,conversation_id);self.require_owner(user,case)
             self.save_note_in(db,user,rid,case,note)
             db.execute('''INSERT INTO care.handoff_requests(case_id,resident_id,from_user,to_user,summary,
                 next_action,waiting_for,message_id,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)''',
@@ -157,12 +162,12 @@ class StaffWorkflow:
                         self.latest_message(db,case),'pending',stamp()))
             self.log(db,user,'handoff_proposed',rid,'case='+str(case['id'])+'; to='+target['id'])
 
-    def accept(self, user, rid, request_id):
+    def accept(self, user, rid, request_id, conversation_id=None):
         self.require_staff(user,rid,True)
         if type(request_id) is not int:
             raise ValueError('交班識別碼不符。')
         with self.transaction() as db:
-            case=self.current_case(db,rid)
+            case=self.current_case(db,rid,conversation_id)
             h=db.execute("SELECT * FROM care.handoff_requests WHERE id=? AND case_id=? AND resident_id=? AND status='pending'",(request_id,case['id'],rid)).fetchone()
             if not h or h['to_user']!=user['id']:
                 raise PermissionError('只有指定接班帳號可以接收有效交班。')
@@ -177,17 +182,17 @@ class StaffWorkflow:
             self.service.log(db,case['conversation_id'],'case_handoff_accepted','case='+str(case['id'])+'; operator='+user['display_name'])
             self.log(db,user,'handoff_accepted',rid,'case='+str(case['id'])+'; from='+old['id'])
 
-    def cancel(self, user, rid):
+    def cancel(self, user, rid, conversation_id=None):
         self.require_staff(user,rid,True)
         with self.transaction() as db:
-            case=self.current_case(db,rid);self.require_owner(user,case)
+            case=self.current_case(db,rid,conversation_id);self.require_owner(user,case)
             db.execute("UPDATE care.handoff_requests SET status='cancelled' WHERE case_id=? AND status='pending'",(case['id'],))
             self.log(db,user,'handoff_cancelled',rid,'case='+str(case['id']))
 
-    def resolve(self, user, rid, note):
+    def resolve(self, user, rid, note, conversation_id=None):
         self.require_staff(user,rid,True)
         with self.transaction() as db:
-            case=self.current_case(db,rid);self.require_owner(user,case)
+            case=self.current_case(db,rid,conversation_id);self.require_owner(user,case)
             db.execute("UPDATE cases SET status='closed',closed_at=?,close_note=? WHERE id=?",(stamp(),note,case['id']))
             db.execute("UPDATE care.handoff_requests SET status='cancelled' WHERE case_id=? AND status='pending'",(case['id'],))
             self.service.cancel_jobs(db,case['conversation_id'],'事件已結案，舊草稿不再適用。')

@@ -28,6 +28,7 @@ class CareConsoleTests(unittest.TestCase):
         self.service = self.app.extensions['care_service']
         self.store = self.app.extensions['care_store']
         self.csrf = self.client.get('/api/session').get_json()['csrf']
+        self.selected_threads = {}
 
     def tearDown(self):
         self.service.stop_worker()
@@ -40,10 +41,18 @@ class CareConsoleTests(unittest.TestCase):
         self.csrf = response.get_json()['csrf']
 
     def post(self, path, data):
+        if '/case/' in path:
+            rid = path.split('/')[3]
+            thread = self.selected_threads.get(rid, conversation(rid))
+            source = self.service.detail(thread)
+            data = dict(data)
+            data.setdefault('conversation_id', thread)
+            data.setdefault('case_id', source['case']['id'] if source['case'] else 0)
         return self.client.post(path, json=data, headers={'X-CSRF-Token':self.csrf})
 
     def detail(self, rid='R001'):
-        response=self.client.get('/api/residents/'+rid)
+        response=self.client.get('/api/residents/'+rid, query_string={
+            'conversation_id': self.selected_threads.get(rid, conversation(rid))})
         self.assertEqual(response.status_code,200,response.get_json())
         return response.get_json()
 
@@ -63,6 +72,7 @@ class CareConsoleTests(unittest.TestCase):
         response=self.post(f'/api/residents/{rid}/message',dict(text=text,channel=channel,line_actor=actor))
         self.assertEqual(response.status_code,200,response.get_json())
         self.assertFalse(response.get_json()['actual_line_sent'])
+        self.selected_threads[rid] = response.get_json()['conversation_id']
 
     def line_send(self, text, rid='R001', actor='family'):
         self.send(text,rid,'demo_line',actor)
@@ -119,15 +129,15 @@ class CareConsoleTests(unittest.TestCase):
         self.assertEqual(data['messages'][0]['author'],'家屬體驗帳號')
         self.assertEqual(data['messages'][0]['input_channel'],'demo_line')
 
-    def test_shared_resident_conversation_keeps_manual_state(self):
+    def test_same_contact_conversation_keeps_manual_state(self):
         self.login('nurse');self.line_send('轉人工')
         self.assertEqual(self.post('/api/residents/R001/case/claim',{}).status_code,200)
-        self.line_send('想了解日照',actor='resident')
+        self.line_send('想了解日照',actor='family')
         data=self.detail();self.assertEqual(data['state'],'human_active')
         self.assertEqual(data['messages'][-1]['actor'],'user')
         self.assertEqual(data['messages'][-1]['text'],'想了解日照')
         self.assertEqual(data['drafts'],[])
-        self.assertEqual(data['messages'][-1]['author'],'住民體驗帳號')
+        self.assertEqual(data['messages'][-1]['author'],'家屬體驗帳號')
         self.assertTrue(any(a['action']=='line_message_simulated' and a['actor']=='nurse' for a in data['audit']))
 
     def test_only_current_case_owner_can_reply_and_resolve(self):
@@ -311,7 +321,7 @@ class CareConsoleTests(unittest.TestCase):
     def test_new_message_invalidates_pending_handoff_acceptance(self):
         self.open_owned_case();self.post('/api/residents/R001/case/handoff',self.progress(to_user='nurse2'))
         request_id=self.detail()['workflow']['handoff']['id']
-        self.line_send('補充：請確認明天的洽詢方式')
+        self.send('補充：請確認明天的洽詢方式')
         self.login('nurse2');self.assertTrue(self.detail()['workflow']['handoff']['stale'])
         self.assertEqual(self.post('/api/residents/R001/case/accept_handoff',dict(request_id=request_id)).status_code,409)
         self.assertEqual(self.detail()['case']['operator'],'護理師體驗帳號')
@@ -412,5 +422,155 @@ class CareConsoleTests(unittest.TestCase):
         self.assertEqual(view['note']['revision'],1)
         self.assertEqual(view['handoff']['to_user'],'nurse2')
         self.assertEqual(source['state'],'human_active')
+
+    def test_contacts_have_separate_messages_cases_and_reply_recipients(self):
+        self.login()
+        self.line_send('轉人工')
+        family_thread = self.selected_threads['R001']
+        self.assertEqual(self.post('/api/residents/R001/case/claim',{}).status_code,200)
+        self.line_send('轉人工', actor='resident')
+        resident_thread = self.selected_threads['R001']
+        self.assertNotEqual(family_thread,resident_thread)
+        self.assertEqual(self.post('/api/residents/R001/case/claim',{}).status_code,200)
+        self.post('/api/residents/R001/case/reply',{'text':'僅回覆住民的虛構訊息'})
+        self.assertEqual(self.detail()['selected_conversation']['recipient'],'demo-line-resident')
+        self.selected_threads['R001'] = family_thread
+        self.assertFalse(any(m['text']=='僅回覆住民的虛構訊息' for m in self.detail()['messages']))
+        self.assertEqual(self.detail()['state'],'human_active')
+        self.post('/api/residents/R001/case/resolve',{'note':'家屬案件完成'})
+        self.assertEqual(self.service.detail(resident_thread)['state'],'human_active')
+        self.assertEqual(self.service.detail(conversation('R001'))['messages'],[])
+
+    def test_two_family_contacts_do_not_share_context(self):
+        self.login()
+        with self.store.db() as db:
+            db.execute("""INSERT INTO users SELECT 'family2','family2','第二位家屬','family',password_hash
+                          FROM users WHERE id='family'""")
+            db.execute("INSERT INTO access VALUES('family2','R001')")
+            db.execute("INSERT INTO line_links VALUES('family2','demo-line-family2','admin',?)",(stamp(),))
+        self.line_send('想了解喘息服務')
+        first = self.selected_threads['R001']
+        self.line_send('想了解日照',actor='family2')
+        second = self.selected_threads['R001']
+        self.assertNotEqual(first,second)
+        self.assertFalse(any(m['text']=='想了解喘息服務' for m in self.detail()['messages']))
+        self.assertEqual(self.detail()['selected_conversation']['contact_id'],'family2')
+        self.assertNotEqual(self.service.detail(first)['messages'],self.service.detail(second)['messages'])
+
+    def test_board_lists_each_contact_case_and_cross_thread_handoff_is_rejected(self):
+        self.login()
+        self.line_send('轉人工')
+        family_thread=self.selected_threads['R001']
+        self.post('/api/residents/R001/case/claim',{})
+        self.post('/api/residents/R001/case/handoff',self.progress(to_user='nurse2'))
+        request_id=self.detail()['workflow']['handoff']['id']
+        self.line_send('轉人工',actor='resident')
+        resident_thread=self.selected_threads['R001']
+        self.post('/api/residents/R001/case/claim',{})
+        board=self.client.get('/api/board').get_json()
+        self.assertEqual({q['conversation_id'] for q in board['work_queue']},{family_thread,resident_thread})
+        self.assertEqual(next(c for c in board['cards'] if c['id']=='R001')['pending_count'],2)
+        self.login('nurse2')
+        self.assertEqual(self.post('/api/residents/R001/case/accept_handoff',{'request_id':request_id}).status_code,403)
+        self.selected_threads['R001']=family_thread
+        self.assertFalse(self.detail()['workflow']['handoff']['stale'])
+        self.assertEqual(self.post('/api/residents/R001/case/accept_handoff',{'request_id':request_id}).status_code,200)
+        self.post('/api/residents/R001/case/reply',{'text':'已接收此家屬案件'})
+        self.assertFalse(any(m['text']=='已接收此家屬案件' for m in self.service.detail(resident_thread)['messages']))
+
+    def test_cross_resident_conversation_read_and_action_are_rejected(self):
+        self.login()
+        self.line_send('轉人工')
+        thread=self.selected_threads['R001']
+        case_id=self.detail()['case']['id']
+        self.assertEqual(self.client.get('/api/residents/R002',query_string={'conversation_id':thread}).status_code,403)
+        result=self.post('/api/residents/R002/case/claim',{'conversation_id':thread,'case_id':case_id})
+        self.assertEqual(result.status_code,403)
+        self.assertEqual(self.detail()['case']['status'],'pending')
+        self.login('caregiver')
+        self.assertEqual(self.client.get('/api/residents/R003',query_string={'conversation_id':thread}).status_code,403)
+
+    def test_stale_case_id_cannot_target_a_new_case(self):
+        self.open_owned_case()
+        old=self.detail()['case']['id']
+        self.post('/api/residents/R001/case/resolve',{'note':'完成'})
+        self.send('轉人工')
+        self.assertEqual(self.post('/api/residents/R001/case/claim',{'case_id':old}).status_code,409)
+        raw=self.client.post('/api/residents/R001/case/claim',json={},
+                             headers={'X-CSRF-Token':self.csrf})
+        self.assertEqual(raw.status_code,409)
+        self.assertEqual(self.detail()['case']['status'],'pending')
+
+    def test_contact_revoke_blocks_reply_and_keeps_history(self):
+        self.login()
+        self.line_send('轉人工')
+        self.post('/api/residents/R001/case/claim',{})
+        before=len(self.detail()['messages'])
+        self.login('admin')
+        self.post('/api/bindings',dict(user_id='family',resident_id='R001',allowed=False))
+        self.login('nurse')
+        self.assertFalse(self.detail()['selected_conversation']['active'])
+        self.assertIsNone(self.detail()['selected_conversation']['recipient'])
+        self.assertEqual(self.post('/api/residents/R001/case/reply',{'text':'不得送出'}).status_code,403)
+        self.assertEqual(len(self.detail()['messages']),before)
+        self.assertEqual(self.post('/api/residents/R001/case/resolve',{'note':'配對已撤銷，結案保留紀錄'}).status_code,200)
+
+    def test_contact_revoke_during_generation_cancels_old_result(self):
+        self.login('admin')
+        self.service.save_ai_settings({'ai_enabled':True,'daily_call_limit':200})
+        self.line_send('想了解喘息服務')
+        thread=self.selected_threads['R001']
+        self.assertTrue(self.service.detail(thread)['generations'])
+        original=self.provider.generate
+        def revoke(config,payload):
+            self.assertEqual(self.post('/api/bindings',dict(user_id='family',resident_id='R001',allowed=False)).status_code,200)
+            return original(config,payload)
+        self.provider.generate=revoke
+        self.service.process_one()
+        detail=self.service.detail(thread)
+        self.assertEqual(detail['generations'][0]['status'],'cancelled')
+        self.assertFalse(any(m['source']=='grounded_generation' for m in detail['messages']))
+        self.post('/api/bindings',dict(user_id='family',resident_id='R001',allowed=True))
+        self.assertFalse(self.service.process_one())
+        self.assertEqual(self.service.detail(thread)['generations'][0]['status'],'cancelled')
+
+    def test_message_source_must_match_selected_conversation(self):
+        self.login()
+        self.line_send('想了解喘息服務')
+        family=self.selected_threads['R001']
+        result=self.post('/api/residents/R001/message',dict(
+            text='不能寫入另一個對話',channel='demo_line',line_actor='resident',conversation_id=family))
+        self.assertEqual(result.status_code,409)
+        self.assertFalse(any(m['text']=='不能寫入另一個對話' for m in self.detail()['messages']))
+
+    def test_legacy_shared_records_are_not_assigned_to_contacts(self):
+        self.login()
+        self.send('舊版共用的虛構紀錄')
+        before=self.service.detail(conversation('R001'))['messages']
+        with self.store.db() as db:
+            db.execute('DROP TABLE contact_conversations')
+        restored=create_app(self.directory,provider=OfflineProvider())
+        self.assertEqual(restored.extensions['care_service'].detail(conversation('R001'))['messages'],before)
+        threads=restored.extensions['care_conversations'].list(self.store.user('nurse'),'R001')
+        for thread in threads:
+            if thread['kind']=='contact':
+                self.assertEqual(restored.extensions['care_service'].detail(thread['id'])['messages'],[])
+        backups=list((self.directory/'backups').glob('before-contact-conversations-*'))
+        self.assertEqual(len(backups),1)
+        with closing(sqlite3.connect(backups[0]/'core.sqlite3')) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM messages WHERE conversation_id=?',
+                                        (conversation('R001'),)).fetchone()[0],len(before))
+        create_app(self.directory,provider=OfflineProvider())
+        self.assertEqual(len(list((self.directory/'backups').glob('before-contact-conversations-*'))),1)
+
+    def test_live_transport_cannot_use_a_logical_thread_as_recipient(self):
+        self.login()
+        self.line_send('轉人工')
+        thread=self.selected_threads['R001']
+        with self.service.db() as db:
+            db.execute("UPDATE conversations SET transport='line' WHERE id=?",(thread,))
+        with self.assertRaises(PermissionError):
+            self.service.deliver(thread,'不得對外送出','human','operator')
+        self.assertEqual(self.service.transport.calls,[])
 
 if __name__=='__main__':unittest.main(verbosity=2)

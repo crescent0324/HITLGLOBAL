@@ -3,3 +3,8 @@
 .assessment-note{border-top:1px solid var(--line);padding-top:10px;font-size:10px;line-height:1.7;color:var(--muted);overflow-wrap:anywhere}.detail-synced{padding:0 24px;margin:0 0 14px}
 #discard-dialog{width:min(440px,calc(100vw - 32px));padding:26px;border:1px solid var(--line);border-radius:14px}#discard-dialog h2{font-size:20px}#discard-description{font-size:14px;line-height:1.8}.discard-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}.discard-actions button{font-size:13px}
 @media(max-width:760px){.work-item{padding:15px}.work-meta{gap:5px 12px}.work-bottom{align-items:flex-start;flex-direction:column}.work-bottom button{align-self:flex-end}.followup-item{align-items:flex-start;flex-direction:column}.followup-item button{align-self:flex-end}.dialog-controls{gap:0}.dialog-controls .secondary{font-size:9px;padding:6px 8px}.dialog-header{padding:18px 15px}.dialog-header h2{font-size:18px}.context-panel,.progress-form{padding:14px}.progress-form .inline-form button{font-size:11px;padding:8px 10px}.section-line{gap:12px}.section-line p{font-size:10px;max-width:180px}.work-title .badge{font-size:9px}.test-tools{padding:13px}.profile small{max-width:135px;overflow-wrap:anywhere}}
+
+.conversation-picker { padding: 14px 20px; border-bottom: 1px solid #dce5e1; background: #f6faf8; }
+.conversation-picker label { display: block; font-weight: 600; margin-bottom: 8px; }
+.conversation-picker select { width: 100%; }
+.conversation-picker p { margin-bottom: 0; }
