@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>照護協作台｜本機體驗環境</title>
+  <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/workflow.css"><script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div id="notice" class="toast" role="status" hidden></div>
+  <section id="login-view" class="login-view">
+    <div class="login-intro"><span class="brand-mark">H</span><p class="eyebrow">LINE × HUMAN-IN-THE-LOOP</p>
+      <h1>院內照護<br>工作台</h1><p>查看照護回報、處理服務訊息，<br>掌握接手進度與交班事項。</p>
+      <div class="demo-tag">本機體驗環境 · 全部住民資料均為虛構</div>
+    </div>
+    <form id="login-form" class="login-card"><p class="eyebrow">STAFF ACCESS</p><h2>院內人員登入</h2>
+      <p class="muted">護理師、照服員與管理者依權限登入。</p>
+      <label>院內帳號<select id="username" name="username"><option value="nurse">護理師</option><option value="nurse2">接班護理師</option><option value="admin">管理者（護理長／IT）</option><option value="caregiver">照服員</option></select></label>
+      <label>密碼<input id="password" name="password" type="password" autocomplete="current-password" required></label>
+      <p class="login-hint">本機體驗共用密碼：<code>CareDemo2026!</code></p>
+      <button class="primary" type="submit">登入協作台 <span aria-hidden="true">→</span></button>
+      <p id="login-error" class="error" role="alert"></p>
+      <p class="small muted">目前僅限這台電腦使用；尚未連接護理之家資料系統及真實 LINE 帳號。</p>
+    </form>
+  </section>
+  <div id="app-view" class="app-shell" hidden>
+    <aside class="sidebar"><a class="brand" href="#board"><span class="brand-mark">H</span><span>照護協作台<small>本機體驗環境</small></span></a>
+      <p class="nav-label">工作空間</p>
+      <nav aria-label="主要導覽"><button data-page="board" class="nav-item active">▦ <span>照護工作台</span></button><button data-page="knowledge" class="nav-item">▤ <span>服務資訊</span></button><button data-page="import" class="nav-item assessor-only">⇥ <span>資料匯入</span></button><button data-page="accounts" class="nav-item admin-only">◎ <span>人員與授權</span></button></nav>
+      <div class="sidebar-note"><span class="status-dot"></span>模擬院內資料<p>顯示最近一筆回報及其時間。<br>尚未串接即時監測設備。</p></div>
+      <div class="profile"><span id="user-avatar" class="avatar">護</span><div><strong id="user-name"></strong><small id="user-role"></small></div><button id="logout" class="icon-button" title="登出" aria-label="登出">↗</button></div>
+    </aside>
+    <main>
+      <header class="topbar"><div><span class="status-dot"></span><span id="connection">正在同步本機資料</span></div><span>LINE：尚未串接</span></header>
+      <div class="page-heading"><div><p class="eyebrow">CARE COLLABORATION</p><h1 id="page-title">照護工作台</h1><p id="page-description">掌握已授權住民的最近回報與訊息處理進度。</p></div><button id="refresh" class="secondary">重新整理 ↻</button></div>
+      <div class="environment-banner">體驗環境：住民、床位與照護紀錄均為虛構。問答使用既有服務摘要；訊息不會送往 LINE。</div>
+      <section id="board-page" class="page"><div id="stats" class="stats"></div>
+        <section id="work-section" class="staff-only"><div class="section-line"><div><h2>訊息待辦</h2><p class="small muted">依訊息風險、接手狀態與建立時間排序。</p></div><label class="filter-label">篩選<select id="queue-filter"><option value="all">全部未結案</option><option value="pending">尚未接手</option><option value="mine">由我處理</option><option value="handoff">交班給我</option></select></label></div><div id="work-queue"></div>
+        <div id="followup-section"><div class="section-line"><div><h2>照護回報需確認</h2><p class="small muted">依最近已評估紀錄列出；新的未評估回報不會解除追蹤提示。</p></div></div><div id="care-followups"></div></div></section>
+        <div class="section-line"><h2>照護住民</h2><label class="filter-label">顯示<select id="board-filter"><option value="all">全部住民</option><option value="pending">有待處理訊息</option><option value="missing">沒有量測回報</option></select></label></div><div id="resident-cards" class="resident-grid"></div><p class="small muted">量測顯示最近回報；照護評估另列最近已評估紀錄及其時間。紀錄不代表當下健康狀況，訊息處理狀態表示回覆權限。</p></section>
+      <section id="knowledge-page" class="page" hidden><div class="info-block"><h2>服務資料來源</h2><p>本體驗版沿用研究原型中整理的官方資料摘要，適合測試資訊查詢與人工轉接。查核日期列於各筆資料；最新資格及安排仍須由承辦單位確認。</p><p>機構服務、探視、費用與預約規則：尚未提供。</p></div><div id="knowledge-list" class="knowledge-grid"></div></section>
+      <section id="import-page" class="page" hidden><div class="panel import-panel"><h2>匯入院內測試紀錄</h2><p class="muted">先以 CSV 驗證欄位與來源紀錄。每次最多 500 筆；有錯誤時整批不寫入，相同識別碼與相同內容會略過。</p><a class="button secondary" href="/api/template.csv" download>下載 CSV 範本 ↓</a>
+        <label>選擇 UTF-8 CSV<input id="csv-file" type="file" accept=".csv,text/csv"></label><label>CSV 內容<textarea id="csv-text" rows="8" placeholder="下載範本後填入虛構測試資料，或直接貼上 CSV。"></textarea></label><label class="check"><input id="synthetic-confirmed" type="checkbox">我確認內容均為虛構資料，未含真實住民或院內紀錄。</label><button id="import-submit" class="primary">檢查並匯入</button><p id="import-result" role="status"></p>
+        <details><summary>欄位說明</summary><p>resident_code：住民代碼 R001–R006；source_record_id：唯一來源識別碼；observed_at：回報時間，需含時區，例如 2026-10-03T22:00:00+08:00。量測欄位依序為體溫（°C）、脈搏（次／分）、血氧（%）、收縮壓與舒張壓（mmHg）；未知請留白。</p><p>care_status 可填「尚未評估」、「一般照護」、「需追蹤」、「需優先確認」。本欄位不由系統推論。更正資料時使用新的 source_record_id，保留原紀錄。</p></details></div></section>
+      <section id="accounts-page" class="page" hidden><div class="info-block"><h2>院內人員與工作權限</h2><p>管理者供護理長與 IT 管理使用。本機體驗版暫以同一管理角色提供功能；正式部署前，需分開設定照護管理與系統維運權限。</p></div><div id="account-list"></div><section class="contact-section"><div class="section-line"><div><h2>LINE 聯絡人配對</h2><p class="small muted">外部聯絡人不具網頁登入權限。</p></div></div><p class="small muted">配對以住民代碼保存，轉床後仍對應同一住民。目前只有模擬 LINE 識別碼，尚未完成真實身分確認。</p><div id="line-contact-list"></div></section><div class="panel backup-panel"><h2>資料備份</h2><p>下載院內資料與對話紀錄的 SQLite 快照。備份不含 API 金鑰與登入工作階段金鑰。</p><button id="backup" class="secondary">下載本機資料備份 ↓</button></div></section>
+    </main>
+  </div>
+  <dialog id="resident-dialog"><div class="dialog-header"><div><p id="resident-code" class="eyebrow"></p><h2 id="resident-title"></h2></div><div class="dialog-controls"><button id="refresh-detail" class="secondary">更新紀錄 ↻</button><button id="close-dialog" class="icon-button" aria-label="關閉住民視窗">×</button></div></div>
+    <p id="detail-synced" class="small muted detail-synced"></p><div class="dialog-tabs" role="tablist"><button class="active" data-tab="records" role="tab">照護紀錄</button><button data-tab="messages" role="tab">服務對話</button><button data-tab="handling" class="assessor-only" role="tab">人工處理</button></div>
+    <section id="records-tab" class="tab-pane"><div id="observation-list"></div><form id="observation-form" class="report-form staff-only"><h3>新增照護測試回報</h3><p class="small muted">未知數值留白。請使用虛構資料；保存後會保留來源與時間。</p><div class="form-grid"><label>回報時間<input id="observed-time" type="datetime-local" required></label><label>照護狀態<select id="care-status"><option>尚未評估</option><option>一般照護</option><option>需追蹤</option><option>需優先確認</option></select></label><label>體溫 °C<input name="temperature_c" type="number" step="0.1" min="0" max="60"></label><label>脈搏 次／分<input name="pulse_bpm" type="number" step="1" min="0" max="400"></label><label>血氧 %<input name="spo2_pct" type="number" step="0.1" min="0" max="100"></label><label>收縮壓 mmHg<input name="systolic_mmhg" type="number" step="1" min="0" max="400"></label><label>舒張壓 mmHg<input name="diastolic_mmhg" type="number" step="1" min="0" max="300"></label></div><label>照護觀察內容<textarea name="care_note" rows="3" maxlength="2000" placeholder="請填寫本次照護觀察；服務案件的交班另在「人工處理」保存。"></textarea></label><button type="submit" class="primary">保存回報</button></form><div class="assessor-only move-block"><h3>床位異動</h3><div class="inline-form"><select id="move-bed" aria-label="目的床位"></select><button id="move-submit" class="secondary">移至此床位</button></div></div></section>
+    <section id="messages-tab" class="tab-pane" hidden><div class="info-block compact"><p>查看與此住民相關的服務訊息。接手、審閱與人工回覆請至「人工處理」。目前尚未串接真實 LINE。</p></div><div id="message-list" class="messages"></div><details id="test-tools" class="test-tools"><summary>流程測試（本機）</summary><p class="small muted">供院內人員驗證流程；訊息只寫入本機，使用固定服務摘要，不會發送至 LINE。</p><form id="message-form"><label>測試訊息來源<select id="message-channel"><option value="web">工作人員網頁測試</option><option id="demo-line-option" value="demo_line">LINE 傳入訊息模擬</option></select></label><label id="line-actor-label" hidden>已配對的模擬聯絡人<select id="line-actor"></select></label><label>測試訊息<textarea id="message-text" rows="3" maxlength="2000" required placeholder="請使用虛構內容，例如：想了解喘息服務；或：轉人工"></textarea></label><button class="primary" type="submit">送出測試訊息 →</button></form></details></section>
+    <section id="handling-tab" class="tab-pane" hidden><div id="case-summary"></div><div id="case-context"></div><div id="saved-progress"></div><div id="handoff-status"></div>
+      <form id="progress-form" class="progress-form" hidden><h3>處理進度與交班</h3><p class="small muted">由目前接手者填寫。內容不由 AI 自動推論；更新進度會取消先前尚未接收的交班。</p><label>已處理內容<textarea id="progress-summary" rows="2" maxlength="1000" required></textarea></label><label>下一步<textarea id="progress-next" rows="2" maxlength="1000" required></textarea></label><label>待確認事項<input id="progress-waiting" maxlength="500" placeholder="例如等待家屬補充資料；沒有可留白。"></label><div class="inline-form"><button type="submit" class="primary">保存進度</button><button id="reload-progress" type="button" class="secondary">重新載入已保存進度</button></div><p id="progress-saved" class="small muted"></p><div class="handoff-form"><label>指定接班帳號<select id="handoff-target"></select></label><button id="propose-handoff" type="button" class="secondary">保存進度並提出交班</button><p class="small muted">對方確認接收前，仍由你負責；交班不會結案或恢復自動回覆。</p></div></form>
+      <div id="draft-list"></div><form id="human-reply-form" hidden><label>人工回覆<textarea id="human-reply" rows="4" maxlength="2000" required></textarea></label><button type="submit" class="primary">送出人工回覆</button></form><form id="resolve-form" hidden><label>處理結果與結案紀錄<textarea id="resolve-note" rows="3" maxlength="1000" required></textarea></label><button type="submit" class="secondary">結案並恢復自動處理</button></form><details class="audit-detail"><summary>先前案件結案紀錄</summary><div id="case-history"></div></details><details class="audit-detail"><summary>操作紀錄</summary><div id="audit-list"></div></details></section>
+  </dialog>
+</body></html>

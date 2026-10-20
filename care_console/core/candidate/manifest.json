@@ -1,0 +1,8 @@
+{
+  "version": "1.2.3-dev.1",
+  "sha256": {
+    "risk_engine_v1_2_tw.py": "2bfcc1c7557006dfc6ad23fb308028f6b8d78136673adb677e8632ea6d43beaf",
+    "hitl_governance_v1.py": "4784606ef2180ff638f390f5a71ccd93456f4493103d5a978000b3052cb278fc",
+    "hitl_governance_v1_2.py": "6f76e58af4582cc8a23563b77826941fd9e621731e5c6eab799bcb74a40d3766"
+  }
+}

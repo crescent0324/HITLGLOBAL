@@ -1,0 +1,46 @@
+# Local state, credentials, databases and logs
+runtime/
+.env
+.env.*
+!.env.example
+config.local.json
+session.key
+*.key
+*.pem
+*.p12
+*.pfx
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.sqlite-*
+*.db
+*.db-*
+*.log
+*.pid
+process.lock
+backups/
+test-results/
+04_實驗結果/
+
+# Dependencies and build/cache output
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+dist/
+build/
+*.egg-info/
+*.exe
+
+# Editor and OS state
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+~$*

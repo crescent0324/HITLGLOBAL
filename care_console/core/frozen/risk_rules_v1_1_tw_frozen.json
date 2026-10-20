@@ -1,0 +1,149 @@
+{
+  "version": "1.1-TW",
+  "status": "frozen-after-debug30-taiwan-review",
+  "frozen_date": "2026-08-24",
+  "research_scope": "中華民國（臺灣）LINE長照聊天機器人之模擬治理情境；資料皆為研究者自建虛構文字，非真實病患資料、非疾病診斷或臨床分流。",
+  "bp": {
+    "medium_sbp": 130,
+    "medium_dbp": 80,
+    "grade2_sbp": 140,
+    "grade2_dbp": 90,
+    "regex": "(?<!\\d)(\\d{2,3})\\s*(?:/|／|-|－)\\s*(\\d{2,3})(?!\\d)",
+    "note": "2022台灣高血壓指引建議以>=130/80 mmHg定義高血壓，Grade 2為>=140/90 mmHg。本研究將明確回報>=130/80之血壓數值操作性映射為『中風險/人工介入』，此為治理規則，不等同臨床診斷或治療決策。"
+  },
+  "normalization_map": {
+    "今添": "今天",
+    "怎ㄇ": "怎麼",
+    "ㄇ": "嗎",
+    "ㄉ": "的",
+    "／": "/",
+    "－": "-"
+  },
+  "terms": {
+    "info_markers": [
+      "什麼是",
+      "有哪些",
+      "怎麼預防",
+      "如何預防",
+      "怎麼量",
+      "要怎麼量",
+      "請問",
+      "想問",
+      "通常有哪些",
+      "多久"
+    ],
+    "negations": [
+      "沒有",
+      "沒",
+      "無",
+      "不會",
+      "未"
+    ],
+    "contrasts": [
+      "但",
+      "但是",
+      "可是",
+      "不過"
+    ],
+    "chest_words": [
+      "胸痛",
+      "胸口痛",
+      "胸悶",
+      "胸口悶",
+      "胸口很痛",
+      "胸口超痛"
+    ],
+    "severe_dyspnea": [
+      "喘不過氣",
+      "呼吸困難",
+      "吸不到氣",
+      "不能呼吸",
+      "快不能呼吸",
+      "喘不過來",
+      "喘不過"
+    ],
+    "mild_dyspnea": [
+      "有點喘",
+      "容易喘",
+      "走一下就喘",
+      "走一下就有點喘",
+      "稍微喘"
+    ],
+    "syncope": [
+      "暈倒",
+      "昏倒",
+      "失去意識",
+      "叫不醒"
+    ],
+    "persistent_modifiers": [
+      "一直",
+      "持續",
+      "整天",
+      "好幾天",
+      "越來越",
+      "加劇",
+      "變嚴重"
+    ],
+    "medication": [
+      "血壓藥",
+      "停藥",
+      "減藥",
+      "加藥",
+      "少吃",
+      "多吃",
+      "劑量",
+      "藥物"
+    ],
+    "nonspecific_discomfort": [
+      "身體怪怪",
+      "不太舒服",
+      "不舒服"
+    ],
+    "general_symptoms": [
+      "頭暈",
+      "走路不穩",
+      "走路也不太穩",
+      "不穩",
+      "疼痛",
+      "痛"
+    ]
+  },
+  "sources": [
+    {
+      "id": "HPA-TW-2021-13904",
+      "scope": "Taiwan",
+      "title": "天氣忽冷忽熱 注意身旁有「心」人",
+      "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=13904",
+      "supports": "突然胸悶/胸痛、呼吸困難、頭暈或暈厥，以及FAST警訊與119緊急處置。"
+    },
+    {
+      "id": "HPA-TW-2022-15034",
+      "scope": "Taiwan",
+      "title": "冷颼颼 溫差大 「心」警訊 FAST送醫",
+      "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4576&pid=15034",
+      "supports": "心臟病警訊與FAST中風辨識；出現警訊應儘速送醫/撥打119。"
+    },
+    {
+      "id": "HPA-TW-2025-HTN",
+      "scope": "Taiwan",
+      "title": "高血壓",
+      "url": "https://www.hpa.gov.tw/1463/s",
+      "supports": "血壓超過130/80 mmHg建議與醫師討論是否需要進一步治療；722居家血壓管理。"
+    },
+    {
+      "id": "TSOC-THS-TW-2022",
+      "scope": "Taiwan",
+      "title": "2022 Guidelines of the Taiwan Society of Cardiology and the Taiwan Hypertension Society for the Management of Hypertension",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9121756/",
+      "supports": "台灣高血壓定義>=130/80 mmHg；Grade 1為130-139或80-89；Grade 2為>=140或>=90；建議722居家血壓監測。"
+    }
+  ],
+  "international_crosscheck": [
+    {
+      "id": "AHA-2025",
+      "scope": "International-crosscheck-only",
+      "url": "https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings",
+      "note": "僅作交叉查證，不作v1.1-TW分類規則的必要來源。"
+    }
+  ]
+}

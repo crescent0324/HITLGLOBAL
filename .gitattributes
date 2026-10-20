@@ -1,0 +1,2 @@
+# Research manifests verify exact bytes; do not rewrite CRLF/LF on checkout.
+* -text

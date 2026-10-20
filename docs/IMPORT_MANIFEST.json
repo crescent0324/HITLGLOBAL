@@ -1,0 +1,222 @@
+{
+  "source_repository": "crescent0324/HITL",
+  "source_commit": "b48e61634a0faae817d37d519228f88858c28194",
+  "imported_at": "2026-10-20",
+  "files": [
+    {
+      "path": "care_console/.gitignore",
+      "sha256": "62d81d0b3606a0535cfd9c2c8802ae000696078394246837fd3ed4f1cd776e2a",
+      "git_blob_sha": "4751102c3150be7839fdbfb61be250ae67729ec9"
+    },
+    {
+      "path": "care_console/app.py",
+      "sha256": "6632614e8a6e912f1748da334c2bb458b37dd8c57dbb4b7b40eb0e3031a70c18",
+      "git_blob_sha": "917811177fa5e013a5ace692173899721a26e27e"
+    },
+    {
+      "path": "care_console/care_store.py",
+      "sha256": "b2ad03a2f39784e3f5b254a2fce325a5f7dd238ee5dc7f302562dcfc86a3b722",
+      "git_blob_sha": "08b00010ec5a02d262dc96ab09115b36ed7e1d9b"
+    },
+    {
+      "path": "care_console/README.md",
+      "sha256": "319c6aeda8135946168a3b73a30571ae1350f486a19ae5e94c0f6936c9b9f451",
+      "git_blob_sha": "46d5ef8b7e6ea8b3946b40fc75dba31fac6462d5"
+    },
+    {
+      "path": "care_console/requirements.txt",
+      "sha256": "05b055cad237ae3212058d5a2f632537c5bc4a0a6b4d67927778fd11382dd4f8",
+      "git_blob_sha": "2dfc7f2a2f505364859374418e4720de89b46866"
+    },
+    {
+      "path": "care_console/run.py",
+      "sha256": "4f08bbedafdb7fc160e95cd60f189587d63e66a916622e1b90be5d82a9f97481",
+      "git_blob_sha": "3c0b1af338612a56561ba596209bb450006b9ff3"
+    },
+    {
+      "path": "care_console/start.cmd",
+      "sha256": "15d7cc3aebfe92296422ec7e0435e54b114b4c51b679ac67e6eb7703a215a2b1",
+      "git_blob_sha": "4ba672333e13b23c8a4c2b32a8924f54b47b48ce"
+    },
+    {
+      "path": "care_console/start.ps1",
+      "sha256": "43fe5ebdccdd25158c9855b82f3bc27c3a5d70068a5df8370d1fafeabaee3554",
+      "git_blob_sha": "30c0fc836a217b89bf9ff422195cfa1c5966642d"
+    },
+    {
+      "path": "care_console/stop.ps1",
+      "sha256": "771499db5f4573f73f76ad368a21d364cc1a0c024cb6ffe9f91a74faf427b5f5",
+      "git_blob_sha": "79c2841c79d3c464d75e0f47c2d3e6c4085860d4"
+    },
+    {
+      "path": "care_console/test_care_console.py",
+      "sha256": "a8c9a07c4bcf649139d5f9a74404c777486bb9b3394cb8771cdcd08e94a9812d",
+      "git_blob_sha": "83d7d326b9a4dff19f57a8ea27a88682135d3745"
+    },
+    {
+      "path": "care_console/workflow.py",
+      "sha256": "04193d375635e09aa2c00a5a83ba4139a1471100e95e28e9a1f22afc74b98562",
+      "git_blob_sha": "edf7c1e6ffc47b3b2e6994832bcecc2e2b444fdc"
+    },
+    {
+      "path": "care_console/使用入口修正_20261004.md",
+      "sha256": "4efae9816de62dc31b0e2aef9033a3428c0ddced9eaf6a207f82c80031ffa323",
+      "git_blob_sha": "4d57ff264a50174788f02f4102c66e8d70f47e47"
+    },
+    {
+      "path": "care_console/系統自我檢查_20261004.md",
+      "sha256": "f69d34844acf88b42b4643fe58a11f7cf4b9af3f0a4157c2dacd27cc718cfe29",
+      "git_blob_sha": "1dc6eeb34e70386ce5680b746eef3ed8f5b218db"
+    },
+    {
+      "path": "care_console/護理師視角改善紀錄_20261004.md",
+      "sha256": "bba3d2aef63a63c89bf9ee0fcdc4aa627fe0128fbc22baa45acaecfce3a023d1",
+      "git_blob_sha": "82a5269635df625cf94d2617c9a4f5ba45e44dc3"
+    },
+    {
+      "path": "care_console/院內介面整理_20261004.md",
+      "sha256": "465a7889827afd272e50984bd4166ea133ba62d0a75083fcc64764f284180a6f",
+      "git_blob_sha": "a9eddfc6f51327594f4adaa07085c0a6f122689a"
+    },
+    {
+      "path": "care_console/驗收紀錄.md",
+      "sha256": "2743aff9b51ef42c7701b2aebc3c5fffb8c3f5cbad010f6a38d785d1e1bcbc36",
+      "git_blob_sha": "7936126643fc8d6655cde9bb542babc66a7055b1"
+    },
+    {
+      "path": "care_console/core/candidate_runtime.py",
+      "sha256": "72222ee49892274b5357d2932197b3b4823aaef0186aa47e8b0d08840ebc07e6",
+      "git_blob_sha": "e5226ce1cd578f17977094a1609d2eec8021652f"
+    },
+    {
+      "path": "care_console/core/dialogue_flow.py",
+      "sha256": "c9f0194c0001fef2a7d80b484475a93a7d10df6dc1744c9ef5f4b514c94db793",
+      "git_blob_sha": "ef78c9cbc29a6123fe892034d36491e0ba1dd556"
+    },
+    {
+      "path": "care_console/core/generation.py",
+      "sha256": "17d79be0efbf785cefaab42c9e4aa554060f1838e52db3a6cbf58892866f5810",
+      "git_blob_sha": "b57b259e7b08f200ab967be50931aa2bef34f45f"
+    },
+    {
+      "path": "care_console/core/integration.py",
+      "sha256": "6da52d6352b66e9a7b9e1766a6ead1e6caed906b681d4e9a1cccccbf8e078e08",
+      "git_blob_sha": "e74641ec6b2920e4ac6125cbe5a87e63ac2e9b1c"
+    },
+    {
+      "path": "care_console/core/knowledge.json",
+      "sha256": "2929527a4a1f3c38574e63d1c62a4b28349325599c7cfe9f562d514d3902170e",
+      "git_blob_sha": "60aef5cc6a323f26ec75a950b569776317d90355"
+    },
+    {
+      "path": "care_console/core/live.py",
+      "sha256": "ca144c9fab70335e70f4e6023569b7c260d9812809e4fff105287c66acf2ffb8",
+      "git_blob_sha": "5bbb6e255451442c5253b5e1682384724c82f155"
+    },
+    {
+      "path": "care_console/core/model_context.py",
+      "sha256": "d406e5e1946bac2bdededb0c7782a4db1ae8df4a37706d896dd1e4b2d10aecf2",
+      "git_blob_sha": "729df58b908d5a20f9c55a84cc19cce0aa487084"
+    },
+    {
+      "path": "care_console/core/research.py",
+      "sha256": "899f1cae4c597d7c3001d0736e608f28d7c3e2d01c0c62bc2ae18fff1915f306",
+      "git_blob_sha": "03952787cf038cce90fd7a40c57087ba237afd2d"
+    },
+    {
+      "path": "care_console/core/resource_followup.py",
+      "sha256": "065161783c7c5bd7932d2b0efa502695f3abc3e0c7f982870b60e6d9d8c576cf",
+      "git_blob_sha": "655ff77ca15083e2033b8a411471fc176b679afd"
+    },
+    {
+      "path": "care_console/core/resource_query.py",
+      "sha256": "51ea3b9be1795eec1837f2d04cc5d87375dc27fa68666154b537c9b180270084",
+      "git_blob_sha": "0a6f81127175ba53bb5f2d052728bf245485d23d"
+    },
+    {
+      "path": "care_console/core/service.py",
+      "sha256": "e832fd8462b3b12467bf2b6ddd8f22c516b7643ff433ac5fd0fea61f5ec807e5",
+      "git_blob_sha": "4ab1e30cb0a25d299a968e81e7e229d0f5907877"
+    },
+    {
+      "path": "care_console/core/service_intents.py",
+      "sha256": "e0d6e4691e827cb10bee1ada4abe003b7512bbbf59a11a41bc56bb3370117bb9",
+      "git_blob_sha": "048cc0dc4e0d577c5fd872883fa1441fdb3240b2"
+    },
+    {
+      "path": "care_console/core/service_knowledge.py",
+      "sha256": "443563060d28dc8db5cc23517fab9a42349f16552a7a3287398b5b54a6459bc8",
+      "git_blob_sha": "f339d11b5408ef92e183dcabf433c46f33e34876"
+    },
+    {
+      "path": "care_console/core/service_scope.py",
+      "sha256": "e4d8e1ef43d9f79a8f0561d71bf75bddf2a60325a1939143b879c9373492d1b3",
+      "git_blob_sha": "ef18b1d1497703ca01ee3ee7d13cae10e189fffc"
+    },
+    {
+      "path": "care_console/core/web.py",
+      "sha256": "a7c9367a2a9b831f7107342a66f3606ef4528a2922ea76db31b130d2c4f01a2f",
+      "git_blob_sha": "672fd7f9093fe83e647f874f037161e89ae79a2d"
+    },
+    {
+      "path": "care_console/core/candidate/hitl_governance_v1.py",
+      "sha256": "4784606ef2180ff638f390f5a71ccd93456f4493103d5a978000b3052cb278fc",
+      "git_blob_sha": "b45385e19fa3f616d565b1ce0c30d4ce926f5db0"
+    },
+    {
+      "path": "care_console/core/candidate/hitl_governance_v1_2.py",
+      "sha256": "6f76e58af4582cc8a23563b77826941fd9e621731e5c6eab799bcb74a40d3766",
+      "git_blob_sha": "c534831430e68a4aeace54022f2b9651f86dd63f"
+    },
+    {
+      "path": "care_console/core/candidate/manifest.json",
+      "sha256": "f9bbb8454f8fa0c4920c9b44d2cb2ad40f208c99d34b57eebecf8d6cd8410fcf",
+      "git_blob_sha": "52c4c0f24e4f83fa893167317fc200ee9a58ce72"
+    },
+    {
+      "path": "care_console/core/candidate/risk_engine_v1_2_tw.py",
+      "sha256": "2bfcc1c7557006dfc6ad23fb308028f6b8d78136673adb677e8632ea6d43beaf",
+      "git_blob_sha": "18a5f1283108cdefcb1baaec0dfe67a3171fa905"
+    },
+    {
+      "path": "care_console/core/frozen/hitl_governance_v1.py",
+      "sha256": "4784606ef2180ff638f390f5a71ccd93456f4493103d5a978000b3052cb278fc",
+      "git_blob_sha": "b45385e19fa3f616d565b1ce0c30d4ce926f5db0"
+    },
+    {
+      "path": "care_console/core/frozen/risk_engine_v1_1_tw.py",
+      "sha256": "a920d9399821b6eb148c53448ea7967fe68846348805030511f98122b22eba27",
+      "git_blob_sha": "f48e9125d84a28016d50e08dc3f22a0e3f920e99"
+    },
+    {
+      "path": "care_console/core/frozen/risk_rules_v1_1_tw_frozen.json",
+      "sha256": "2ccea90949495341e8fbd39c725eab79764e02877085e406931a76a27ff73663",
+      "git_blob_sha": "acd8be8dbfb49732fc525aebba6af28b39d85ad0"
+    },
+    {
+      "path": "care_console/core/frozen/__init__.py",
+      "sha256": "9aa79558249df5341956d739fe87aefa4137872402be20b7c54b60874abb3eac",
+      "git_blob_sha": "9043c8dab984e6523c840a1da16e356f4709ee3f"
+    },
+    {
+      "path": "care_console/static/app.js",
+      "sha256": "69c4f8c46990f37f0f17c0c1bb6b79075291f41dd10ca0d2b01080ed430bf4a1",
+      "git_blob_sha": "5eca958526be462c50e63f87b568ebfcdd76b09f"
+    },
+    {
+      "path": "care_console/static/style.css",
+      "sha256": "3c4f2417a718820d0023170ccfdcf1257958544d2860f780b81c016eab988956",
+      "git_blob_sha": "adfb73c56539d2812908e3a3de29af6b150b5b01"
+    },
+    {
+      "path": "care_console/static/workflow.css",
+      "sha256": "9ce0b0c13314448ec7b72824f292bb8d17122ff07f991454a00915ccdd88f1dc",
+      "git_blob_sha": "84a7423d08b1c1237da8f62cfc9992e95bacccfc"
+    },
+    {
+      "path": "care_console/templates/index.html",
+      "sha256": "c1fef1faa6ae180d3335904fde42cb5798f9f174450414b59ca32ddfe546c8ff",
+      "git_blob_sha": "edfd10034125b8c05608a4dd047fb4ca6c951fd9"
+    }
+  ]
+}
