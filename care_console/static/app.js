@@ -61,10 +61,11 @@ function roleVisibility() {
   $$('.admin-only').forEach(el=>el.hidden=appState.user?.role!=='admin');
   $$('.assessor-only').forEach(el=>el.hidden=!assessor());
   $$('.staff-only').forEach(el=>el.hidden=!staff());
-  $('#messages-tab .info-block p').textContent=assessor()
-    ? '查看與此住民相關的服務訊息。接手、審閱與人工回覆請至「人工處理」。目前尚未串接真實 LINE。'
-    : '查看工作範圍內住民的服務訊息；接手與人工回覆由護理師或照護管理人員處理。目前尚未串接真實 LINE。';
+  $('#messages-tab .info-block p').textContent='查看與此住民相關的服務訊息。接手、審閱與人工回覆請至「人工處理」。目前尚未串接真實 LINE。';
   $('#care-status').disabled=appState.user?.role==='caregiver';
+  const pendingFilter=$('#board-filter option[value="pending"]');
+  pendingFilter.hidden=!assessor();pendingFilter.disabled=!assessor();
+  if(!assessor()&&$('#board-filter').value==='pending')$('#board-filter').value='all';
   $$('#queue-filter option[value="mine"],#queue-filter option[value="handoff"]').forEach(el=>{el.hidden=!assessor();el.disabled=!assessor();});
   if(!assessor() && ['mine','handoff'].includes($('#queue-filter').value))$('#queue-filter').value='all';
 }
@@ -72,6 +73,7 @@ async function sessionView() {
   const result = await api('/api/session'); appState.user=result.user;appState.csrf=result.csrf;
   $('#login-view').hidden=!!result.user;$('#app-view').hidden=!result.user;
   if(!result.user){ if($('#resident-dialog').open)$('#resident-dialog').close();appState.rid=null;appState.cid=null;appState.cards=[];appState.queue=[];appState.detail=null;appState.progressDirty=false;
+    clearProtectedDetail();
     ['#resident-cards','#stats','#message-list','#audit-list','#observation-list','#case-summary','#draft-list','#account-list','#line-contact-list','#work-queue','#care-followups','#case-context','#saved-progress','#handoff-status','#case-history'].forEach(s=>$(s).replaceChildren());
     return;
   }
@@ -101,7 +103,7 @@ function renderBoard() {
     ['由我處理',appState.queue.filter(q=>q.mine).length,'仍由我負責'],
     ['交班給我',appState.queue.filter(q=>q.handoff_to_me).length,'等待我確認接收'],
     ['照護回報需確認',cards.filter(c=>['需追蹤','需優先確認'].includes(c.assessment?.care_status)).length,'依最近已評估紀錄列出']
-  ]:[['照護住民',cards.length,'依工作範圍顯示'],['待處理訊息',appState.queue.length,'由護理師或照護管理人員處理'],['照護回報需確認',cards.filter(c=>['需追蹤','需優先確認'].includes(c.assessment?.care_status)).length,'依最近已評估紀錄列出'],['沒有量測回報',cards.filter(c=>!c.latest || Object.values(c.latest.values).every(v=>v==null)).length,'需要另行確認資訊']];
+  ]:[['照護住民',cards.length,'依工作範圍顯示'],['最近回報待評估',cards.filter(c=>c.latest?.care_status==='尚未評估').length,'由護理師確認照護狀態'],['照護回報需確認',cards.filter(c=>['需追蹤','需優先確認'].includes(c.assessment?.care_status)).length,'依最近已評估紀錄列出'],['沒有量測回報',cards.filter(c=>!c.latest || Object.values(c.latest.values).every(v=>v==null)).length,'需要另行確認資訊']];
   $('#stats').innerHTML=metrics.map(([label,n,note])=>`<div class="stat"><span>${label}</span><strong>${n}</strong><small>${note}</small></div>`).join('');
   const filter=$('#board-filter').value;
   const shown=cards.filter(c=>filter==='all'||filter==='pending'&&c.pending_case||filter==='missing'&&(!c.latest||Object.values(c.latest.values).every(v=>v==null)));
@@ -109,7 +111,7 @@ function renderBoard() {
     const v=c.latest?.values||{};
     const assessment=c.assessment;
     const assessmentNote=assessment?`最近已評估紀錄：${esc(date(assessment.observed_at))} · ${esc(assessment.source)}${assessment.id!==c.latest?.id?'<br>最新回報尚未評估，前次評估紀錄仍保留。':''}`:'尚無已評估紀錄。';
-    return `<article class="resident-card"><div class="card-top"><div><span class="bed">${esc(c.ward)} · ${esc(c.bed_id||'未配置床位')}</span><h3>${esc(c.label)}</h3></div><div class="status-label">最近照護評估${badge(assessment?.care_status||(c.latest?'尚未評估':null))}</div></div><div class="card-source">${c.latest?`最近回報 ${esc(date(c.latest.observed_at))}<br>${esc(c.latest.source)}`:'尚無照護回報；不能據此判斷健康狀況。'}</div><div class="vitals">${vital('體溫',v.temperature_c,'°C')}${vital('脈搏',v.pulse_bpm,'次／分')}${vital('血氧',v.spo2_pct,'%')}</div>${c.latest?.note?`<p class="card-note">回報內容：${esc(short(c.latest.note,75))}</p>`:''}<p class="assessment-note">${assessmentNote}</p><div class="card-bottom"><span class="state">訊息：${esc(states[c.state]||c.state)}${c.pending_count>1?` · ${c.pending_count} 件`:``}</span><button data-resident="${esc(c.id)}">查看與處理 →</button></div></article>`;
+    return `<article class="resident-card"><div class="card-top"><div><span class="bed">${esc(c.ward)} · ${esc(c.bed_id||'未配置床位')}</span><h3>${esc(c.label)}</h3></div><div class="status-label">最近照護評估${badge(assessment?.care_status||(c.latest?'尚未評估':null))}</div></div><div class="card-source">${c.latest?`最近回報 ${esc(date(c.latest.observed_at))}<br>${esc(c.latest.source)}`:'尚無照護回報；不能據此判斷健康狀況。'}</div><div class="vitals">${vital('體溫',v.temperature_c,'°C')}${vital('脈搏',v.pulse_bpm,'次／分')}${vital('血氧',v.spo2_pct,'%')}</div>${c.latest?.note?`<p class="card-note">回報內容：${esc(short(c.latest.note,75))}</p>`:''}<p class="assessment-note">${assessmentNote}</p><div class="card-bottom">${assessor()?`<span class="state">訊息：${esc(states[c.state]||c.state)}${c.pending_count>1?` · ${c.pending_count} 件`:``}</span>`:'<span class="state">照護紀錄與觀察回報</span>'}<button data-resident="${esc(c.id)}">查看與處理 →</button></div></article>`;
   }).join(''):'<div class="empty">目前沒有符合條件的照護住民。</div>';
   renderQueue();
 }
@@ -129,7 +131,7 @@ const pages={board:['照護工作台','查看訊息待辦、照護回報與交�
 async function showPage(page) {
   if(!pages[page] || page==='import'&&!assessor() || page==='accounts'&&appState.user.role!=='admin')page='board';
   appState.page=page;$$('.page').forEach(el=>el.hidden=el.id!==page+'-page');$$('[data-page]').forEach(el=>el.classList.toggle('active',el.dataset.page===page));
-  $('#page-title').textContent=pages[page][0];$('#page-description').textContent=pages[page][1];
+  $('#page-title').textContent=pages[page][0];$('#page-description').textContent=page==='board'&&!assessor()?'查看工作範圍內的照護紀錄與觀察回報。':pages[page][1];
   if(page==='board')await refreshBoard();
   if(page==='knowledge')await loadKnowledge();
   if(page==='accounts')await loadAccounts();
@@ -155,7 +157,7 @@ async function loadAccounts() {
   $('#line-contact-list').innerHTML=data.users.filter(u=>['family','resident'].includes(u.role)).map(renderAccount).join('')||'<p class="muted">尚無 LINE 聯絡人配對。</p>';
 }
 function selectTab(tab) {
-  if(tab==='handling'&&!assessor())tab='records';
+  if(tab!=='records'&&!assessor())tab='records';
   $$('.tab-pane').forEach(el=>el.hidden=el.id!==tab+'-tab');$$('[data-tab]').forEach(el=>{el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-selected',String(el.dataset.tab===tab));});
 }
 async function openResident(rid,tab='records',cid=null) {
@@ -166,8 +168,8 @@ async function openResident(rid,tab='records',cid=null) {
 }
 async function loadResident(cid=appState.cid,resetConversation=false) {
   if(!appState.rid)return;
-  const data=await api('/api/residents/'+appState.rid+(cid?'?conversation_id='+encodeURIComponent(cid):''));
-  if(!resetConversation && appState.detail?.selected_conversation.id===data.selected_conversation.id &&
+  const data=await api('/api/residents/'+appState.rid+(assessor()&&cid?'?conversation_id='+encodeURIComponent(cid):''));
+  if(assessor()&&!resetConversation && appState.detail?.selected_conversation?.id===data.selected_conversation.id &&
      appState.detail?.case?.id!==data.case?.id &&
      ['#human-reply-form','#resolve-form','#progress-form'].some(id=>formChanged($(id)))){
     throw new Error('案件已變更。本頁未保存內容仍保留，請先另存或清除，再更新紀錄；目前內容不能直接用於新案件。');
@@ -176,21 +178,27 @@ async function loadResident(cid=appState.cid,resetConversation=false) {
     ['#message-form','#human-reply-form','#resolve-form','#progress-form'].forEach(id=>$(id).reset());
     appState.progressDirty=false;appState.progressCase=null;
   }
-  appState.detail=data;appState.cid=data.selected_conversation.id;
-  $('#conversation-select').innerHTML=data.conversations.map(t=>`<option value="${esc(t.id)}">${esc(t.label)}${t.active?'':'（配對已撤銷）'}</option>`).join('');
+  appState.detail=data;appState.cid=data.selected_conversation?.id||null;
+  $('#conversation-select').innerHTML=(data.conversations||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.label)}${t.active?'':'（配對已撤銷）'}</option>`).join('');
   $('#conversation-select').value=appState.cid;
   const thread=data.selected_conversation;
-  $('#conversation-recipient').textContent=thread.kind==='contact'
+  $('#conversation-recipient').textContent=!thread?'':thread.kind==='contact'
     ? `目前對話：${thread.label}。${thread.active?'人工回覆僅記錄於此聯絡人的對話；尚未傳送 LINE。':'配對已撤銷，暫停新訊息與回覆；既有紀錄保留供院內處理。'}`
     : '院內測試與舊版紀錄，沒有對外收件者。聯絡人對話請由上方選單切換。';
   $('#detail-synced').textContent='此視窗讀取於 '+date(new Date().toISOString())+'；按「更新紀錄」取得後續變更。';
   $('#resident-title').textContent=data.resident.label;$('#resident-code').textContent=`${data.resident.ward} · ${data.resident.bed_id} · ${data.resident.id}`;
   $('#observation-list').innerHTML=data.observations.length?data.observations.map(o=>`<article class="observation"><header><strong>${esc(date(o.observed_at))} · ${esc(o.source)}</strong>${badge(o.care_status)}</header><div class="vitals">${vital('體溫',o.values.temperature_c,'°C')}${vital('脈搏',o.values.pulse_bpm,'次／分')}${vital('血氧',o.values.spo2_pct,'%')}${vital('收縮壓',o.values.systolic_mmhg,'mmHg')}${vital('舒張壓',o.values.diastolic_mmhg,'mmHg')}</div><p>${esc(o.note)}</p><small>來源紀錄 ${esc(o.source_record_id)} · 入庫 ${esc(date(o.received_at))} · 記錄者 ${esc(roles[o.entered_by]||o.entered_by)}</small></article>`).join(''):'<div class="empty">尚無照護紀錄。量測缺值以「—」呈現。</div>';
-  renderMessages(data); renderHandling(data);roleVisibility();
+  if(assessor()){renderMessages(data);renderHandling(data);}else{clearProtectedDetail();selectTab('records');}
+  roleVisibility();
   if(resetConversation)['#message-form','#human-reply-form','#resolve-form','#progress-form'].forEach(id=>rememberForm($(id)));
   if(assessor()) {
     const body=await api('/api/beds');$('#move-bed').innerHTML=body.beds.filter(b=>!b.resident_id||b.resident_id===appState.rid).map(b=>`<option value="${esc(b.id)}" ${b.resident_id===appState.rid?'selected':''}>${esc(b.id)}${b.resident_id?'（目前床位）':'（空床）'}</option>`).join('');
   }
+}
+function clearProtectedDetail() {
+  ['#conversation-select','#conversation-recipient','#line-actor','#handoff-target','#message-list','#audit-list','#case-summary','#draft-list','#case-context','#saved-progress','#handoff-status','#case-history'].forEach(s=>$(s).replaceChildren());
+  ['#message-form','#human-reply-form','#resolve-form','#progress-form'].forEach(s=>$(s).reset());
+  $('#test-tools').hidden=true;$('#progress-form').hidden=true;$('#human-reply-form').hidden=true;$('#resolve-form').hidden=true;
 }
 function renderMessages(data) {
   const thread=data.selected_conversation;
@@ -210,7 +218,7 @@ function renderMessages(data) {
 }
 function messageSourceView() {$('#line-actor-label').hidden=$('#message-channel').value!=='demo_line';}
 function renderHandling(data) {
-  const c=data.case;const owns=c?.status==='claimed'&&c.operator===appState.user.display_name;
+  const c=data.case;const owns=c?.status==='claimed'&&c.operator_id===appState.user.id;
   $('#human-reply-form').hidden=!owns||!data.selected_conversation.active;$('#resolve-form').hidden=!owns;
   $('#resolve-form button').textContent=data.selected_conversation.active?'結案並恢復自動處理':'結案並保留配對停用';
   $('#case-summary').innerHTML=c?`<div class="case-block"><span class="eyebrow">案件 #${esc(c.id)} · 訊息風險 ${esc(c.trigger_risk)}</span><h3>${esc(states[data.state])}</h3><p>${!data.selected_conversation.active?'配對已撤銷；可依權限接手、記錄進度或結案，無法送出回覆。':c.status==='pending'?'接手後可人工回覆；完成後填寫結果並結案。':`目前接手帳號：${esc(c.operator)}。此聯絡人的一般訊息會持續記錄於同一案件。`}</p>${c.status==='pending'?'<button class="primary" id="claim-case">接手此案件</button>':''}</div>`:'<div class="empty">目前沒有未結案事件。是否可自動回覆仍依聯絡人配對、風險與資料範圍判定。</div>';

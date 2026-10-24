@@ -5,7 +5,7 @@ import json
 import secrets
 import sqlite3
 
-from care_store import STAFF, stamp
+from care_store import ASSESSORS, stamp
 from live import LiveService
 
 
@@ -48,7 +48,7 @@ class ConversationDirectory:
 
     def contact_thread(self, user, rid, contact_id):
         self.store.require(user, rid)
-        if user['role'] not in STAFF:
+        if user['role'] not in ASSESSORS:
             raise PermissionError('僅限院內工作人員操作。')
         contact = self.store.user(contact_id) if isinstance(contact_id, str) else None
         if not contact or contact['role'] not in {'family', 'resident'} or not self.store.demo_link(contact):
@@ -62,7 +62,7 @@ class ConversationDirectory:
 
     def describe(self, user, rid, thread_id=None):
         self.store.require(user, rid)
-        if user['role'] not in STAFF:
+        if user['role'] not in ASSESSORS:
             raise PermissionError('僅限院內工作人員查看對話。')
         if thread_id is None or thread_id == internal_conversation(rid):
             return {'id': internal_conversation(rid), 'kind': 'internal', 'contact_id': None,
@@ -84,7 +84,7 @@ class ConversationDirectory:
 
     def list(self, user, rid):
         self.store.require(user, rid)
-        if user['role'] not in STAFF:
+        if user['role'] not in ASSESSORS:
             raise PermissionError('僅限院內工作人員查看對話。')
         with self.store.db() as db:
             contact_ids = [r['user_id'] for r in db.execute('''SELECT a.user_id FROM access a

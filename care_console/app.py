@@ -18,6 +18,7 @@ sys.path.insert(0, str(BASE / 'core'))
 from integration import OfflineLineTransport
 from care_store import CareStore, ROLES, STAFF, ASSESSORS, CSV_FIELDS, stamp
 from workflow import StaffWorkflow
+from migrations import backup_before_owner_migration
 from conversations import ConversationDirectory, ScopedLiveService, internal_conversation, backup_before_thread_schema
 from werkzeug.exceptions import Conflict
 
@@ -40,6 +41,7 @@ def create_app(data_dir=None, provider=None):
     if not key_path.exists():
         key_path.write_text(secrets.token_hex(32), encoding='utf-8')
     backup_before_thread_schema(directory)
+    backup_before_owner_migration(directory)
     store = CareStore(directory)
     conversations = ConversationDirectory(store)
     service = ScopedLiveService(directory / 'core', conversations, transport=OfflineLineTransport(), provider=provider)
@@ -171,24 +173,27 @@ def create_app(data_dir=None, provider=None):
         for resident in store.residents(current):
             observations = store.observations(current, resident['id'], 1)
             resident_queue = []
-            with service.lock:
-                for thread in conversations.list(current, resident['id']):
-                    service.enroll(thread['id'], 'simulation')
-                    source = service.detail(thread['id'])
-                    if source['case']:
-                        item = workflow.queue_item(current, resident, source)
-                        item.update(conversation_id=thread['id'], contact_label=thread['label'],
-                                    contact_active=thread['active'], conversation_kind=thread['kind'])
-                        resident_queue.append(item)
+            if current['role'] in ASSESSORS:
+                with service.lock:
+                    for thread in conversations.list(current, resident['id']):
+                        service.enroll(thread['id'], 'simulation')
+                        source = service.detail(thread['id'])
+                        if source['case']:
+                            item = workflow.queue_item(current, resident, source)
+                            item.update(conversation_id=thread['id'], contact_label=thread['label'],
+                                        contact_active=thread['active'], conversation_kind=thread['kind'])
+                            resident_queue.append(item)
             resident_queue = workflow.sort_queue(resident_queue)
             queue.extend(resident_queue)
             first = resident_queue[0] if resident_queue else None
-            cards.append(resident | {'latest': observations[0] if observations else None,
-                         'assessment': store.latest_assessment(current, resident['id']),
-                         'state': first['state'] if first else 'automatic',
+            card = resident | {'latest': observations[0] if observations else None,
+                               'assessment': store.latest_assessment(current, resident['id'])}
+            if current['role'] in ASSESSORS:
+                card.update({'state': first['state'] if first else 'automatic',
                          'pending_case': bool(resident_queue), 'pending_count': len(resident_queue),
                          'case_operator': first['operator'] if first else None,
                          'risk': first['message_risk'] if first else None})
+            cards.append(card)
         return jsonify(cards=cards, work_queue=workflow.sort_queue(queue), synchronized_at=stamp(), mode='模擬院內資料／本機體驗',
                        ai_enabled=service.settings.public()['ai_enabled'],
                        line_mode='本機流程模擬，未連接真實 LINE',
@@ -200,6 +205,10 @@ def create_app(data_dir=None, provider=None):
         current = user()
         store.require(current, rid)
         resident = next(r for r in store.residents(current) if r['id'] == rid)
+        if current['role'] not in ASSESSORS:
+            if 'conversation_id' in request.args:
+                raise PermissionError('照服員無權存取服務對話；請以照護紀錄回報觀察。')
+            return jsonify(resident=resident, observations=store.observations(current, rid), role=current['role'])
         with service.lock:
             threads = conversations.list(current, rid)
             selected = conversations.describe(current, rid, request.args.get('conversation_id'))
@@ -211,6 +220,8 @@ def create_app(data_dir=None, provider=None):
                     for m in source['messages']]
         case = source['case']
         case_view = {k: case[k] for k in ('id', 'status', 'trigger_risk', 'origin', 'operator', 'created_at')} if case else None
+        if case_view:
+            case_view.update(workflow.identity(case))
         drafts = []
         if current['role'] in ASSESSORS:
             drafts = [{k: j.get(k) for k in ('id', 'status', 'mode', 'response_text', 'error', 'created_at')}
@@ -218,12 +229,12 @@ def create_app(data_dir=None, provider=None):
         return jsonify(resident=resident, observations=store.observations(current, rid),
                        conversations=threads, selected_conversation=selected,
                        messages=messages, case=case_view, state=source['state'], drafts=drafts,
-                       workflow=workflow.view(current,rid,source) if current['role'] in STAFF else None,
+                       workflow=workflow.view(current,rid,source),
                        line_contacts=store.line_contacts(current,rid) if current['role'] in ASSESSORS else [],
                        audit=store.audit(current, rid), role=current['role'])
 
     @app.post('/api/residents/<rid>/message')
-    @roles()
+    @roles(*ASSESSORS)
     def message(rid):
         current = user()
         store.require(current, rid)
@@ -285,12 +296,11 @@ def create_app(data_dir=None, provider=None):
             if action in {'reply', 'approve'} and not selected['active']:
                 raise PermissionError('聯絡人配對已撤銷，不能回覆或核准草稿。')
             if action == 'claim':
-                service.claim(case['id'], current['display_name'])
+                workflow.claim(current, rid, case['id'], thread_id)
             elif action == 'accept_handoff':
                 workflow.accept(current, rid, data.get('request_id'), thread_id)
             else:
-                if case['status'] != 'claimed' or case['operator'] != current['display_name']:
-                    raise PermissionError('請由目前接手的帳號處理；其他帳號不能代為操作。')
+                workflow.require_owner(current, case)
                 if action == 'reply':
                     text = data.get('text')
                     if not isinstance(text, str) or not text.strip() or len(text) > 2000:
