@@ -1,0 +1,89 @@
+{
+  "checked": "2026-10-24",
+  "base_commit": "18729be4178e431418cbcbce010ca409f0b30fa9",
+  "scope": "docs/competitive-research/ only",
+  "document_validation": {
+    "counts": {
+      "CODE_EVIDENCE.csv": 18,
+      "CODE_INVENTORY.csv": 53,
+      "FUNCTION_MATRIX.csv": 125,
+      "HITLGLOBAL_FEATURE_AUDIT.csv": 125,
+      "PUBLIC_GAPS.csv": 221,
+      "SOURCE_CATALOG.csv": 65,
+      "TEST_EVIDENCE.csv": 47,
+      "TRAINING_VIDEO_CATALOG.csv": 86,
+      "UI_EVIDENCE.csv": 167
+    },
+    "markdown_files": 13,
+    "markdown_links_checked": 1238,
+    "markdown_tables_checked": 64,
+    "matrix_markdown_rows": 125,
+    "base_inventory_hashes_checked": 53,
+    "errors": []
+  },
+  "mermaid": {
+    "parser": "mermaid 12.2.0",
+    "total": 8,
+    "passed": 8,
+    "results": [
+      {
+        "file": "CAREONE_DEEP_DIVE.md",
+        "diagram": 1,
+        "ok": true,
+        "type": "flowchart-v2"
+      },
+      {
+        "file": "JUBO_DEEP_DIVE.md",
+        "diagram": 1,
+        "ok": true,
+        "type": "flowchart-v2"
+      },
+      {
+        "file": "PRODUCT_STRATEGY.md",
+        "diagram": 1,
+        "ok": true,
+        "type": "flowchart-v2"
+      },
+      {
+        "file": "TECHNOLOGY_AND_SECURITY.md",
+        "diagram": 1,
+        "ok": true,
+        "type": "flowchart-v2"
+      },
+      {
+        "file": "UCARE_DEEP_DIVE.md",
+        "diagram": 1,
+        "ok": true,
+        "type": "flowchart-v2"
+      },
+      {
+        "file": "WORKFLOW_COMPARISON.md",
+        "diagram": 1,
+        "ok": true,
+        "type": "flowchart-v2"
+      },
+      {
+        "file": "WORKFLOW_COMPARISON.md",
+        "diagram": 2,
+        "ok": true,
+        "type": "sequence"
+      },
+      {
+        "file": "WORKFLOW_COMPARISON.md",
+        "diagram": 3,
+        "ok": true,
+        "type": "flowchart-v2"
+      }
+    ]
+  },
+  "existing_code_tests": {
+    "command": "python -B -m unittest -v test_care_console",
+    "python": "3.12.14",
+    "flask": "3.1.3",
+    "waitress": "3.0.2",
+    "passed": 47,
+    "failed": 0,
+    "seconds": 138.847,
+    "scope": "本機與離線替代服務；未完成真實 LINE 或線上模型驗收"
+  }
+}
