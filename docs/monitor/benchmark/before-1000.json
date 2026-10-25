@@ -1,0 +1,469 @@
+{
+  "stage": "before",
+  "case_count": 1000,
+  "distribution": [
+    {
+      "status": "claimed",
+      "count": 100
+    },
+    {
+      "status": "closed",
+      "count": 800
+    },
+    {
+      "status": "pending",
+      "count": 100
+    }
+  ],
+  "authorized_residents": [
+    "R001",
+    "R002"
+  ],
+  "authorized_cases": 340,
+  "dataset": "five cases per contact thread, six residents in rotation; 80% closed, 10% claimed, 10% pending; 3 events/case; 4 messages/thread; half pending handoffs intentionally stale",
+  "environment": {
+    "python": "3.12.14 (main, Aug 25 2026, 14:01:42) [MSC v.1944 64 bit (AMD64)]",
+    "sqlite": "3.53.1",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "processor": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+    "cpu_count": 20
+  },
+  "startup_seconds_excluded_from_timings": 1.2615006000050926,
+  "results": {
+    "list_with_statistics": {
+      "samples_ms": [
+        16.76920000318205,
+        16.417400001955684,
+        16.704900001059286
+      ],
+      "median_ms": 16.704900001059286,
+      "python_peak_bytes_separate_run": 2979667,
+      "python_retained_bytes_separate_run": 14818
+    },
+    "statistics_only": {
+      "samples_ms": [
+        12.429399997927248,
+        11.815300000307616,
+        11.830700001155492
+      ],
+      "median_ms": 11.830700001155492,
+      "python_peak_bytes_separate_run": 845196,
+      "python_retained_bytes_separate_run": 14352
+    },
+    "next_page_with_statistics": {
+      "samples_ms": [
+        16.829499996674713,
+        17.163599994091783,
+        16.51970000239089
+      ],
+      "median_ms": 16.829499996674713,
+      "python_peak_bytes_separate_run": 2979731,
+      "python_retained_bytes_separate_run": 14874
+    },
+    "single_case_timeline": {
+      "samples_ms": [
+        3.059800001210533,
+        2.1133999980520457,
+        2.0732999983010814
+      ],
+      "median_ms": 2.1133999980520457,
+      "python_peak_bytes_separate_run": 310523,
+      "python_retained_bytes_separate_run": 354
+    }
+  },
+  "query_plans": {
+    "scoped_rows": [
+      {
+        "id": 2,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CO-ROUTINE threads"
+      },
+      {
+        "id": 3,
+        "parent": 2,
+        "notused": 0,
+        "detail": "COMPOUND QUERY"
+      },
+      {
+        "id": 4,
+        "parent": 3,
+        "notused": 0,
+        "detail": "LEFT-MOST SUBQUERY"
+      },
+      {
+        "id": 16,
+        "parent": 4,
+        "notused": 46,
+        "detail": "SEARCH viewer USING INDEX sqlite_autoindex_users_1 (id=?)"
+      },
+      {
+        "id": 24,
+        "parent": 4,
+        "notused": 56,
+        "detail": "SEARCH a USING COVERING INDEX sqlite_autoindex_access_1 (user_id=?)"
+      },
+      {
+        "id": 30,
+        "parent": 4,
+        "notused": 47,
+        "detail": "SEARCH r USING INDEX sqlite_autoindex_residents_1 (id=?)"
+      },
+      {
+        "id": 37,
+        "parent": 4,
+        "notused": 46,
+        "detail": "SEARCH p USING INDEX current_resident_bed (resident_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 47,
+        "parent": 4,
+        "notused": 47,
+        "detail": "SEARCH b USING INDEX sqlite_autoindex_beds_1 (id=?) LEFT-JOIN"
+      },
+      {
+        "id": 75,
+        "parent": 3,
+        "notused": 0,
+        "detail": "UNION ALL"
+      },
+      {
+        "id": 93,
+        "parent": 75,
+        "notused": 46,
+        "detail": "SEARCH viewer USING INDEX sqlite_autoindex_users_1 (id=?)"
+      },
+      {
+        "id": 101,
+        "parent": 75,
+        "notused": 56,
+        "detail": "SEARCH a USING COVERING INDEX sqlite_autoindex_access_1 (user_id=?)"
+      },
+      {
+        "id": 107,
+        "parent": 75,
+        "notused": 47,
+        "detail": "SEARCH r USING INDEX sqlite_autoindex_residents_1 (id=?)"
+      },
+      {
+        "id": 114,
+        "parent": 75,
+        "notused": 46,
+        "detail": "SEARCH p USING INDEX current_resident_bed (resident_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 124,
+        "parent": 75,
+        "notused": 47,
+        "detail": "SEARCH b USING INDEX sqlite_autoindex_beds_1 (id=?) LEFT-JOIN"
+      },
+      {
+        "id": 132,
+        "parent": 75,
+        "notused": 62,
+        "detail": "SEARCH t USING INDEX sqlite_autoindex_contact_conversations_2 (resident_id=?)"
+      },
+      {
+        "id": 141,
+        "parent": 75,
+        "notused": 46,
+        "detail": "SEARCH u USING INDEX sqlite_autoindex_users_1 (id=?) LEFT-JOIN"
+      },
+      {
+        "id": 148,
+        "parent": 75,
+        "notused": 44,
+        "detail": "SEARCH l USING COVERING INDEX sqlite_autoindex_line_links_1 (user_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 155,
+        "parent": 75,
+        "notused": 45,
+        "detail": "SEARCH ca USING COVERING INDEX sqlite_autoindex_access_1 (user_id=? AND resident_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 220,
+        "parent": 0,
+        "notused": 216,
+        "detail": "SCAN c"
+      },
+      {
+        "id": 241,
+        "parent": 0,
+        "notused": 47,
+        "detail": "SEARCH t USING AUTOMATIC PARTIAL COVERING INDEX (thread_id=?)"
+      },
+      {
+        "id": 245,
+        "parent": 0,
+        "notused": 46,
+        "detail": "SEARCH u USING INDEX sqlite_autoindex_users_1 (id=?) LEFT-JOIN"
+      },
+      {
+        "id": 253,
+        "parent": 0,
+        "notused": 45,
+        "detail": "SEARCH oa USING COVERING INDEX sqlite_autoindex_access_1 (user_id=? AND resident_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 262,
+        "parent": 0,
+        "notused": 45,
+        "detail": "SEARCH n USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN"
+      },
+      {
+        "id": 267,
+        "parent": 0,
+        "notused": 45,
+        "detail": "SEARCH h USING INDEX one_pending_handoff (case_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 279,
+        "parent": 0,
+        "notused": 46,
+        "detail": "SEARCH fu USING INDEX sqlite_autoindex_users_1 (id=?) LEFT-JOIN"
+      },
+      {
+        "id": 287,
+        "parent": 0,
+        "notused": 46,
+        "detail": "SEARCH tu USING INDEX sqlite_autoindex_users_1 (id=?) LEFT-JOIN"
+      },
+      {
+        "id": 295,
+        "parent": 0,
+        "notused": 45,
+        "detail": "SEARCH ta USING COVERING INDEX sqlite_autoindex_access_1 (user_id=? AND resident_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 350,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 4"
+      },
+      {
+        "id": 355,
+        "parent": 350,
+        "notused": 216,
+        "detail": "SEARCH messages"
+      },
+      {
+        "id": 373,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 5"
+      },
+      {
+        "id": 378,
+        "parent": 373,
+        "notused": 53,
+        "detail": "SEARCH care.case_activity USING COVERING INDEX activity_by_case (case_id=?)"
+      }
+    ],
+    "keyset_page": [
+      {
+        "id": 2,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CO-ROUTINE threads"
+      },
+      {
+        "id": 3,
+        "parent": 2,
+        "notused": 0,
+        "detail": "COMPOUND QUERY"
+      },
+      {
+        "id": 4,
+        "parent": 3,
+        "notused": 0,
+        "detail": "LEFT-MOST SUBQUERY"
+      },
+      {
+        "id": 16,
+        "parent": 4,
+        "notused": 46,
+        "detail": "SEARCH viewer USING INDEX sqlite_autoindex_users_1 (id=?)"
+      },
+      {
+        "id": 24,
+        "parent": 4,
+        "notused": 56,
+        "detail": "SEARCH a USING COVERING INDEX sqlite_autoindex_access_1 (user_id=?)"
+      },
+      {
+        "id": 30,
+        "parent": 4,
+        "notused": 47,
+        "detail": "SEARCH r USING INDEX sqlite_autoindex_residents_1 (id=?)"
+      },
+      {
+        "id": 37,
+        "parent": 4,
+        "notused": 46,
+        "detail": "SEARCH p USING INDEX current_resident_bed (resident_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 47,
+        "parent": 4,
+        "notused": 47,
+        "detail": "SEARCH b USING INDEX sqlite_autoindex_beds_1 (id=?) LEFT-JOIN"
+      },
+      {
+        "id": 75,
+        "parent": 3,
+        "notused": 0,
+        "detail": "UNION ALL"
+      },
+      {
+        "id": 93,
+        "parent": 75,
+        "notused": 46,
+        "detail": "SEARCH viewer USING INDEX sqlite_autoindex_users_1 (id=?)"
+      },
+      {
+        "id": 101,
+        "parent": 75,
+        "notused": 56,
+        "detail": "SEARCH a USING COVERING INDEX sqlite_autoindex_access_1 (user_id=?)"
+      },
+      {
+        "id": 107,
+        "parent": 75,
+        "notused": 47,
+        "detail": "SEARCH r USING INDEX sqlite_autoindex_residents_1 (id=?)"
+      },
+      {
+        "id": 114,
+        "parent": 75,
+        "notused": 46,
+        "detail": "SEARCH p USING INDEX current_resident_bed (resident_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 124,
+        "parent": 75,
+        "notused": 47,
+        "detail": "SEARCH b USING INDEX sqlite_autoindex_beds_1 (id=?) LEFT-JOIN"
+      },
+      {
+        "id": 132,
+        "parent": 75,
+        "notused": 62,
+        "detail": "SEARCH t USING INDEX sqlite_autoindex_contact_conversations_2 (resident_id=?)"
+      },
+      {
+        "id": 141,
+        "parent": 75,
+        "notused": 46,
+        "detail": "SEARCH u USING INDEX sqlite_autoindex_users_1 (id=?) LEFT-JOIN"
+      },
+      {
+        "id": 148,
+        "parent": 75,
+        "notused": 44,
+        "detail": "SEARCH l USING COVERING INDEX sqlite_autoindex_line_links_1 (user_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 155,
+        "parent": 75,
+        "notused": 45,
+        "detail": "SEARCH ca USING COVERING INDEX sqlite_autoindex_access_1 (user_id=? AND resident_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 221,
+        "parent": 0,
+        "notused": 196,
+        "detail": "SEARCH c USING INTEGER PRIMARY KEY (rowid<?)"
+      },
+      {
+        "id": 242,
+        "parent": 0,
+        "notused": 47,
+        "detail": "SEARCH t USING AUTOMATIC PARTIAL COVERING INDEX (thread_id=?)"
+      },
+      {
+        "id": 246,
+        "parent": 0,
+        "notused": 46,
+        "detail": "SEARCH u USING INDEX sqlite_autoindex_users_1 (id=?) LEFT-JOIN"
+      },
+      {
+        "id": 254,
+        "parent": 0,
+        "notused": 45,
+        "detail": "SEARCH oa USING COVERING INDEX sqlite_autoindex_access_1 (user_id=? AND resident_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 263,
+        "parent": 0,
+        "notused": 45,
+        "detail": "SEARCH n USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN"
+      },
+      {
+        "id": 268,
+        "parent": 0,
+        "notused": 45,
+        "detail": "SEARCH h USING INDEX one_pending_handoff (case_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 280,
+        "parent": 0,
+        "notused": 46,
+        "detail": "SEARCH fu USING INDEX sqlite_autoindex_users_1 (id=?) LEFT-JOIN"
+      },
+      {
+        "id": 288,
+        "parent": 0,
+        "notused": 46,
+        "detail": "SEARCH tu USING INDEX sqlite_autoindex_users_1 (id=?) LEFT-JOIN"
+      },
+      {
+        "id": 296,
+        "parent": 0,
+        "notused": 45,
+        "detail": "SEARCH ta USING COVERING INDEX sqlite_autoindex_access_1 (user_id=? AND resident_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 353,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 4"
+      },
+      {
+        "id": 358,
+        "parent": 353,
+        "notused": 216,
+        "detail": "SEARCH messages"
+      },
+      {
+        "id": 377,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 5"
+      },
+      {
+        "id": 382,
+        "parent": 377,
+        "notused": 53,
+        "detail": "SEARCH care.case_activity USING COVERING INDEX activity_by_case (case_id=?)"
+      }
+    ],
+    "timeline": [
+      {
+        "id": 5,
+        "parent": 0,
+        "notused": 50,
+        "detail": "SEARCH care.case_activity USING INDEX activity_by_case (case_id=? AND id<?)"
+      }
+    ]
+  },
+  "memory": {
+    "process_peak_rss_bytes": 49528832,
+    "process_rss_bytes": 48353280,
+    "private_bytes": 32649216
+  },
+  "memory_note": "tracemalloc measures Python allocations in a separate fourth run; process peak RSS includes startup and all operations, not a per-operation increment. Timings use three warm-cache sequential samples without tracemalloc.",
+  "invariant_sha256": "2debdb0a9cfeab47c90080397fe7858e90fc47fc703e9da0f47d182153741927",
+  "network_calls": 0,
+  "real_line_sends": 0
+}

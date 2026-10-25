@@ -2,14 +2,36 @@
 from contextlib import closing
 from pathlib import Path
 import json
-import secrets
 import sqlite3
 import re
 from werkzeug.security import generate_password_hash
 from care_store import ASSESSORS, DEMO_PASSWORD, stamp
+from snapshots import upgrade_snapshot
 
 OWNER_MIGRATION = 'stable_case_owner_v1'
 MONITOR_MIGRATION = 'staff_scope_monitor_v2'
+MONITOR_INDEX_MIGRATION = 'case_monitor_indexes_v3'
+
+
+def backup_before_monitor_indexes(directory):
+    directory=Path(directory)
+    facility,core=directory/'facility.sqlite3',directory/'core/research.sqlite3'
+    if not facility.is_file() or not core.is_file():
+        return
+    with closing(sqlite3.connect(facility)) as db:
+        if db.execute('SELECT 1 FROM meta WHERE key=?',(MONITOR_INDEX_MIGRATION,)).fetchone():
+            return
+    return upgrade_snapshot(directory,'before-case-monitor-indexes-v3',MONITOR_INDEX_MIGRATION)
+
+
+def migrate_monitor_indexes(workflow):
+    with workflow.transaction() as db:
+        db.execute('BEGIN IMMEDIATE')
+        if db.execute('SELECT 1 FROM care.meta WHERE key=?',(MONITOR_INDEX_MIGRATION,)).fetchone():
+            return
+        db.execute('CREATE INDEX IF NOT EXISTS monitor_cases_by_thread ON cases(conversation_id,id)')
+        db.execute('CREATE INDEX IF NOT EXISTS monitor_messages_by_thread ON messages(conversation_id,id)')
+        db.execute('INSERT INTO care.meta VALUES(?,?)',(MONITOR_INDEX_MIGRATION,stamp()))
 
 
 def backup_before_monitor_upgrade(directory):
@@ -20,19 +42,7 @@ def backup_before_monitor_upgrade(directory):
     with closing(sqlite3.connect(facility)) as db:
         if db.execute('SELECT 1 FROM meta WHERE key=?', (MONITOR_MIGRATION,)).fetchone():
             return
-    target = directory / 'backups' / ('before-staff-scope-monitor-v2-' + secrets.token_hex(8))
-    target.mkdir(parents=True)
-    for name, source in [('facility.sqlite3', facility), ('core.sqlite3', directory / 'core/research.sqlite3')]:
-        if source.exists():
-            with closing(sqlite3.connect(source)) as src, closing(sqlite3.connect(target / name)) as dst:
-                src.backup(dst)
-    for name in ('environment.json', 'core/integration-environment.json'):
-        source = directory / name
-        if source.exists():
-            (target / source.name).write_bytes(source.read_bytes())
-    (target / 'manifest.json').write_text(json.dumps({
-        'purpose': MONITOR_MIGRATION, 'created_at': stamp(), 'credentials_included': False,
-    }), encoding='utf-8')
+    return upgrade_snapshot(directory,'before-staff-scope-monitor-v2',MONITOR_MIGRATION)
 
 
 def migrate_monitor_access(workflow):
@@ -103,18 +113,7 @@ def backup_before_owner_migration(directory):
         done = db.execute('SELECT value FROM meta WHERE key=?', (OWNER_MIGRATION,)).fetchone()
     if has_id and done:
         return
-    target = directory / 'backups' / ('before-stable-case-owner-v1-' + secrets.token_hex(8))
-    target.mkdir(parents=True)
-    for name, source in [('facility.sqlite3', facility), ('core.sqlite3', core)]:
-        with closing(sqlite3.connect(source)) as src, closing(sqlite3.connect(target / name)) as dst:
-            src.backup(dst)
-    for name in ('environment.json', 'core/integration-environment.json'):
-        source = directory / name
-        if source.exists():
-            (target / source.name).write_bytes(source.read_bytes())
-    (target / 'manifest.json').write_text(json.dumps({
-        'purpose': OWNER_MIGRATION, 'created_at': stamp(), 'credentials_included': False,
-    }), encoding='utf-8')
+    return upgrade_snapshot(directory,'before-stable-case-owner-v1',OWNER_MIGRATION)
 
 
 def migrate_case_owner_ids(workflow):
