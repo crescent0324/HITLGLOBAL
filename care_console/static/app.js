@@ -16,6 +16,7 @@ document.body.append(discardDialog);
 let discardDecision=null;
 function confirmDiscard(message) {
   if(discardDecision)return Promise.resolve(false);
+  clearNotice();
   $('#discard-description').textContent=message;discardDialog.returnValue='keep';discardDialog.showModal();
   return new Promise(resolve=>{discardDecision=resolve;});
 }
@@ -40,8 +41,19 @@ const supervisor = () => appState.user?.role==='head_nurse';
 const date = value => value ? new Date(value).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}) : '尚未回報';
 const duration = value => {const minutes=Math.floor(value/60);return minutes<1?'未滿 1 分鐘':minutes<60?`${minutes} 分鐘`:`${Math.floor(minutes/60)} 小時 ${minutes%60} 分鐘`;};
 const short = (value,limit=110) => String(value||'').length>limit?String(value).slice(0,limit)+'…':String(value||'');
+function clearNotice(owner=null) {
+  const box=$('#notice');if(owner && box.parentElement!==owner)return;
+  clearTimeout(appState.toastTimer);box.hidden=true;box.textContent='';document.body.append(box);
+}
+document.addEventListener('close',event=>{
+  if(event.target instanceof HTMLDialogElement && !event.target.open)clearNotice(event.target);
+},true);
 function toast(text, bad=false) {
-  const box = $('#notice'); box.textContent = text; box.classList.toggle('bad',bad); box.hidden=false;
+  const box = $('#notice');
+  // Keep feedback in the active modal's top layer and accessibility scope.
+  const host = $$('dialog[open]').at(-1) || document.body;
+  host.append(box);
+  box.textContent = text; box.classList.toggle('bad',bad); box.hidden=false;
   clearTimeout(appState.toastTimer); appState.toastTimer=setTimeout(()=>box.hidden=true,6000);
 }
 async function api(path, data, options={}) {
@@ -75,6 +87,7 @@ function roleVisibility() {
   if(!assessor() && ['mine','handoff'].includes($('#queue-filter').value))$('#queue-filter').value='all';
 }
 async function sessionView() {
+  clearNotice();
   const epoch=++appState.epoch;
   clearMonitor();
   const result = await api('/api/session');if(epoch!==appState.epoch)return;appState.user=result.user;appState.csrf=result.csrf;
@@ -256,6 +269,7 @@ function monitorEvent(event) {
 }
 async function openMonitorCase(caseId,older=false) {
   if(!supervisor())return;
+  if(!older)clearNotice();
   monitorState.historyController?.abort();
   monitorState.historyError=false;monitorState.historyLoading=true;
   const controller=new AbortController();monitorState.historyController=controller;
@@ -305,6 +319,7 @@ function selectTab(tab) {
   $$('.tab-pane').forEach(el=>el.hidden=el.id!==tab+'-tab');$$('[data-tab]').forEach(el=>{el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-selected',String(el.dataset.tab===tab));});
 }
 async function openResident(rid,tab='records',cid=null) {
+  clearNotice();
   appState.rid=rid;appState.progressDirty=false;appState.progressCase=null;selectTab(tab);$('#observation-form').reset();$('#message-form').reset();$('#human-reply-form').reset();$('#resolve-form').reset();
   $('#test-tools').open=false;
   const local = new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);$('#observed-time').value=local;
@@ -312,6 +327,7 @@ async function openResident(rid,tab='records',cid=null) {
 }
 async function loadResident(cid=appState.cid,resetConversation=false) {
   if(!appState.rid)return;
+  if(resetConversation)clearNotice();
   const epoch=appState.epoch,rid=appState.rid;
   const data=await api('/api/residents/'+appState.rid+(assessor()&&cid?'?conversation_id='+encodeURIComponent(cid):''));
   if(epoch!==appState.epoch||rid!==appState.rid||!staff())return;
