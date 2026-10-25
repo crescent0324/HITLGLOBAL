@@ -77,6 +77,231 @@ class CareConsoleTests(unittest.TestCase):
     def line_send(self, text, rid='R001', actor='family'):
         self.send(text,rid,'demo_line',actor)
 
+    def test_caregiver_cannot_read_family_conversations_or_case_metadata(self):
+        self.login();self.line_send('轉人工：虛構家屬私人訊息 PRIVATE-FAMILY-ONLY')
+        thread=self.selected_threads['R001']
+        self.assertEqual(self.post('/api/residents/R001/case/claim',{}).status_code,200)
+        self.assertEqual(self.post('/api/residents/R001/case/progress',self.progress(
+            summary='PRIVATE-CASE-PROGRESS',next_action='由護理師處理')).status_code,200)
+        self.login('caregiver')
+        board=self.client.get('/api/board').get_json()
+        self.assertEqual(board['work_queue'],[])
+        for card in board['cards']:
+            self.assertFalse(set(card)&{'state','pending_case','pending_count','case_operator','risk'})
+        detail=self.client.get('/api/residents/R001').get_json()
+        self.assertEqual(set(detail),{'resident','observations','role'})
+        self.assertNotIn('PRIVATE-',json.dumps(board|detail))
+        for cid in [thread,conversation('R001'),'unknown-thread']:
+            response=self.client.get('/api/residents/R001',query_string={'conversation_id':cid})
+            self.assertEqual(response.status_code,403)
+        self.assertEqual(self.post('/api/residents/R001/message',dict(text='不得讀寫共用對話')).status_code,403)
+        self.assertEqual(self.post('/api/residents/R001/message',dict(text='不得冒用家屬',channel='demo_line',line_actor='family')).status_code,403)
+        self.assertEqual(self.client.get('/api/residents/R003').status_code,403)
+        self.assertEqual(self.client.get('/api/knowledge').status_code,200)
+        self.assertEqual(self.post('/api/residents/R001/observation',self.row()).status_code,200)
+
+    def test_same_display_name_cannot_impersonate_case_owner(self):
+        self.open_owned_case()
+        before=self.detail()
+        with self.store.db() as db:
+            db.execute("UPDATE users SET display_name=? WHERE id='nurse2'",(self.store.user('nurse')['display_name'],))
+        self.login('nurse2')
+        queue=self.client.get('/api/board').get_json()['work_queue']
+        self.assertFalse(queue[0]['mine'])
+        for action,payload in [
+            ('reply',{'text':'不可冒名回覆'}),
+            ('progress',self.progress(summary='不可冒名改進度')),
+            ('handoff',self.progress(to_user='admin')),
+            ('cancel_handoff',{}),
+            ('resolve',{'note':'不可冒名結案'})]:
+            with self.subTest(action=action):
+                self.assertEqual(self.post('/api/residents/R001/case/'+action,payload).status_code,403)
+        after=self.detail()
+        self.assertEqual(after['case']['id'],before['case']['id'])
+        self.assertEqual(after['case']['status'],'claimed')
+        self.assertEqual(len(after['messages']),len(before['messages']))
+        self.assertIsNone(after['workflow']['note'])
+
+    def test_owner_rename_keeps_identity_and_handoff_respects_ids(self):
+        self.open_owned_case()
+        self.assertEqual(self.detail()['case']['operator_id'],'nurse')
+        self.assertEqual(self.post('/api/residents/R001/case/handoff',self.progress(to_user='nurse2')).status_code,200)
+        request_id=self.detail()['workflow']['handoff']['id']
+        with self.store.db() as db:
+            db.execute("UPDATE users SET display_name='同名護理師' WHERE id IN ('nurse','nurse2')")
+        self.login('nurse')
+        self.assertEqual(self.detail()['case']['operator_id'],'nurse')
+        self.assertEqual(self.detail()['case']['operator_name'],'同名護理師')
+        self.assertEqual(self.post('/api/residents/R001/case/reply',{'text':'更名後仍由原帳號回覆'}).status_code,200)
+        # A reply invalidates the old handoff; only the original ID may propose anew.
+        self.assertEqual(self.post('/api/residents/R001/case/handoff',self.progress(to_user='nurse2',revision=1)).status_code,200)
+        request_id=self.detail()['workflow']['handoff']['id']
+        self.login('admin')
+        self.assertEqual(self.post('/api/residents/R001/case/accept_handoff',{'request_id':request_id}).status_code,403)
+        self.login('nurse2')
+        self.assertEqual(self.post('/api/residents/R001/case/accept_handoff',{'request_id':request_id}).status_code,200)
+        self.assertEqual(self.detail()['case']['operator_id'],'nurse2')
+        self.login('nurse')
+        self.assertEqual(self.post('/api/residents/R001/case/reply',{'text':'原帳號不可再處理'}).status_code,403)
+        self.login('nurse2')
+        self.assertEqual(self.post('/api/residents/R001/case/resolve',{'note':'虛構案件已完成'}).status_code,200)
+
+    def make_legacy_owner(self, legacy_name):
+        """Build only temporary pre-upgrade storage, with the original name column."""
+        case=self.detail()['case']
+        with self.service.db() as db:
+            db.execute('UPDATE cases SET operator=? WHERE id=?',(legacy_name,case['id']))
+            db.execute('ALTER TABLE cases DROP COLUMN operator_id')
+        with self.store.db() as db:
+            db.execute("DELETE FROM meta WHERE key='stable_case_owner_v1'")
+            db.execute('DROP TABLE case_owner_migrations')
+        return case['id']
+
+    def insert_review_fixture(self):
+        # A retained draft fixture tests access/cancellation without any model call.
+        thread=self.selected_threads.get('R001',conversation('R001'))
+        with self.service.db() as db:
+            cur=db.execute('''INSERT INTO generations(event_id,conversation_id,risk,mode,status,payload,sources,
+                model,config_revision,prompt_version,knowledge_version,knowledge_hash,created_at,updated_at,response_text)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',('fixture-'+str(self.service.database),thread,'中','REVIEW','draft','{}','[]',
+                    'offline-fixture',0,'fixture','fixture','fixture',stamp(),stamp(),'虛構草稿，不可冒名核准'))
+            return cur.lastrowid
+
+    def test_same_name_colleague_cannot_review_real_conversation_draft(self):
+        self.open_owned_case();job_id=self.insert_review_fixture()
+        with self.store.db() as db:
+            db.execute("UPDATE users SET display_name=? WHERE id='nurse2'",(self.store.user('nurse')['display_name'],))
+        self.login('nurse2')
+        for action in ['approve','reject']:
+            self.assertEqual(self.post('/api/residents/R001/case/'+action,dict(job_id=job_id,text='不可冒名核准',note='不可冒名審閱')).status_code,403)
+        with self.service.db() as db:
+            self.assertEqual(db.execute('SELECT status FROM generations WHERE id=?',(job_id,)).fetchone()[0],'draft')
+        self.assertEqual(self.provider.calls,[])
+
+    def test_unique_legacy_owner_is_backed_up_and_migrated_once(self):
+        self.open_owned_case()
+        self.assertEqual(self.post('/api/residents/R001/case/handoff',self.progress(to_user='nurse2')).status_code,200)
+        original=self.detail();case_id=self.make_legacy_owner(self.store.user('nurse')['display_name'])
+        restored=create_app(self.directory,provider=OfflineProvider())
+        service=restored.extensions['care_service']
+        with service.db() as db:
+            case=dict(db.execute('SELECT * FROM cases WHERE id=?',(case_id,)).fetchone())
+        self.assertEqual((case['operator_id'],case['operator'],case['status']),('nurse','nurse','claimed'))
+        view=restored.extensions['care_workflow'].view(self.store.user('nurse'),'R001',service.detail(conversation('R001')))
+        self.assertEqual(view['note']['summary'],original['workflow']['note']['summary'])
+        self.assertEqual(view['handoff']['id'],original['workflow']['handoff']['id'])
+        self.assertEqual(len(service.detail(conversation('R001'))['messages']),len(original['messages']))
+        backups=list((self.directory/'backups').glob('before-stable-case-owner-v1-*'))
+        self.assertEqual(len(backups),1)
+        with closing(sqlite3.connect(backups[0]/'core.sqlite3')) as db:
+            self.assertNotIn('operator_id',{r[1] for r in db.execute('PRAGMA table_info(cases)')})
+            self.assertEqual(db.execute('SELECT operator FROM cases WHERE id=?',(case_id,)).fetchone()[0],'護理師體驗帳號')
+        self.assertFalse(any(p.name in {'session.key','config.local.json'} for p in backups[0].iterdir()))
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT legacy_operator FROM case_owner_migrations WHERE case_id=?',(case_id,)).fetchone()[0],'護理師體驗帳號')
+            db.execute("UPDATE users SET display_name='後來同名' WHERE id IN ('nurse','nurse2')")
+        again=create_app(self.directory,provider=OfflineProvider())
+        with again.extensions['care_service'].db() as db:
+            self.assertEqual(db.execute('SELECT operator_id FROM cases WHERE id=?',(case_id,)).fetchone()[0],'nurse')
+        self.assertEqual(len(list((self.directory/'backups').glob('before-stable-case-owner-v1-*'))),1)
+
+    def test_ambiguous_legacy_owner_returns_to_pending_and_cancels_draft(self):
+        self.open_owned_case()
+        self.assertEqual(self.post('/api/residents/R001/case/handoff',self.progress(to_user='nurse2')).status_code,200)
+        original=self.detail();job_id=self.insert_review_fixture()
+        legacy=self.store.user('nurse')['display_name']
+        with self.store.db() as db:
+            db.execute("UPDATE users SET display_name=? WHERE id='nurse2'",(legacy,))
+        case_id=self.make_legacy_owner(legacy)
+        restored=create_app(self.directory,provider=OfflineProvider())
+        service=restored.extensions['care_service']
+        with service.db() as db:
+            case=dict(db.execute('SELECT * FROM cases WHERE id=?',(case_id,)).fetchone())
+            self.assertEqual(db.execute('SELECT status FROM generations WHERE id=?',(job_id,)).fetchone()[0],'cancelled')
+        self.assertEqual(case['status'],'pending');self.assertIsNone(case['operator_id']);self.assertIsNone(case['operator'])
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT result FROM case_owner_migrations WHERE case_id=?',(case_id,)).fetchone()[0],'ambiguous_display_name')
+            self.assertEqual(db.execute('SELECT status FROM handoff_requests WHERE case_id=?',(case_id,)).fetchone()[0],'cancelled')
+            self.assertEqual(db.execute('SELECT summary FROM case_notes WHERE case_id=?',(case_id,)).fetchone()[0],original['workflow']['note']['summary'])
+        wf=restored.extensions['care_workflow']
+        for uid in ['nurse','nurse2']:
+            with self.assertRaises(PermissionError):wf.require_owner(self.store.user(uid),case)
+        self.assertEqual(len(service.detail(conversation('R001'))['messages']),len(original['messages']))
+        wf.claim(self.store.user('nurse2'),'R001',case_id)
+        self.assertEqual(service.detail(conversation('R001'))['case']['operator_id'],'nurse2')
+
+    def test_missing_or_ineligible_legacy_owner_never_grants_authority(self):
+        self.open_owned_case();legacy='不存在的舊帳號'
+        case_id=self.make_legacy_owner(legacy)
+        restored=create_app(self.directory,provider=OfflineProvider())
+        with restored.extensions['care_service'].db() as db:
+            self.assertEqual(db.execute('SELECT status FROM cases WHERE id=?',(case_id,)).fetchone()[0],'pending')
+        # A later matching display name must not revive the old owner on restart.
+        with self.store.db() as db:db.execute("UPDATE users SET display_name=? WHERE id='nurse2'",(legacy,))
+        again=create_app(self.directory,provider=OfflineProvider())
+        with again.extensions['care_service'].db() as db:
+            self.assertIsNone(db.execute('SELECT operator_id FROM cases WHERE id=?',(case_id,)).fetchone()[0])
+
+    def test_caregiver_cannot_bypass_api_through_internal_read_helpers(self):
+        self.login();self.line_send('轉人工')
+        user=self.store.user('caregiver');directory=self.app.extensions['care_conversations']
+        source=self.service.detail(self.selected_threads['R001'])
+        for call in [lambda:directory.list(user,'R001'),lambda:directory.describe(user,'R001',self.selected_threads['R001']),
+                     lambda:directory.contact_thread(user,'R001','family'),lambda:self.store.audit(user,'R001'),
+                     lambda:self.store.authors(user,'R001'),lambda:self.app.extensions['care_workflow'].view(user,'R001',source)]:
+            with self.assertRaises(PermissionError):call()
+
+    def test_legacy_owner_matching_only_caregiver_is_not_migrated_as_owner(self):
+        self.open_owned_case();case_id=self.make_legacy_owner(self.store.user('caregiver')['display_name'])
+        restored=create_app(self.directory,provider=OfflineProvider())
+        with restored.extensions['care_service'].db() as db:
+            case=dict(db.execute('SELECT * FROM cases WHERE id=?',(case_id,)).fetchone())
+        self.assertEqual(case['status'],'pending');self.assertIsNone(case['operator_id'])
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT result FROM case_owner_migrations WHERE case_id=?',(case_id,)).fetchone()[0],'ineligible_account')
+
+    def test_owner_migration_failure_rolls_back_schema_and_records(self):
+        self.open_owned_case()
+        legacy='無法辨認的舊責任人';case_id=self.make_legacy_owner(legacy)
+        with patch.object(type(self.service),'cancel_jobs',side_effect=RuntimeError('injected migration failure')):
+            with self.assertRaisesRegex(RuntimeError,'injected migration failure'):
+                create_app(self.directory,provider=OfflineProvider())
+        with self.service.db() as db:
+            self.assertNotIn('operator_id',{r['name'] for r in db.execute('PRAGMA table_info(cases)')})
+            case=db.execute('SELECT status,operator FROM cases WHERE id=?',(case_id,)).fetchone()
+            self.assertEqual(tuple(case),('claimed',legacy))
+        with self.store.db() as db:
+            self.assertIsNone(db.execute("SELECT 1 FROM meta WHERE key='stable_case_owner_v1'").fetchone())
+            self.assertIsNone(db.execute("SELECT 1 FROM sqlite_master WHERE name='case_owner_migrations'").fetchone())
+        restored=create_app(self.directory,provider=OfflineProvider())
+        with restored.extensions['care_service'].db() as db:
+            self.assertEqual(db.execute('SELECT status FROM cases WHERE id=?',(case_id,)).fetchone()[0],'pending')
+
+    def test_closed_legacy_case_keeps_history_without_inventing_owner_id(self):
+        self.open_owned_case();case_id=self.detail()['case']['id']
+        self.assertEqual(self.post('/api/residents/R001/case/resolve',{'note':'保留的舊結案內容'}).status_code,200)
+        with self.service.db() as db:
+            db.execute('UPDATE cases SET operator=? WHERE id=?',('已刪除的舊帳號',case_id))
+            db.execute('ALTER TABLE cases DROP COLUMN operator_id')
+        with self.store.db() as db:
+            db.execute("DELETE FROM meta WHERE key='stable_case_owner_v1'")
+            db.execute('DROP TABLE case_owner_migrations')
+        restored=create_app(self.directory,provider=OfflineProvider())
+        service=restored.extensions['care_service'];source=service.detail(conversation('R001'))
+        self.assertIsNone(source['case'])
+        view=restored.extensions['care_workflow'].view(self.store.user('nurse'),'R001',source)
+        self.assertEqual(view['history'][0]['close_note'],'保留的舊結案內容')
+        self.assertIsNone(view['history'][0]['operator_id'])
+
+    def test_backup_failure_aborts_owner_upgrade(self):
+        self.open_owned_case();case_id=self.make_legacy_owner('護理師體驗帳號')
+        with patch('app.backup_before_owner_migration',side_effect=OSError('snapshot unavailable')):
+            with self.assertRaisesRegex(OSError,'snapshot unavailable'):
+                create_app(self.directory,provider=OfflineProvider())
+        with self.service.db() as db:
+            self.assertNotIn('operator_id',{r['name'] for r in db.execute('PRAGMA table_info(cases)')})
+            self.assertEqual(db.execute('SELECT operator FROM cases WHERE id=?',(case_id,)).fetchone()[0],'護理師體驗帳號')
+
     def test_unauthenticated_and_remote_access_denied(self):
         self.assertEqual(self.client.get('/api/board').status_code,401)
         self.assertEqual(self.client.get('/health',base_url='http://evil.example').status_code,403)
@@ -116,7 +341,9 @@ class CareConsoleTests(unittest.TestCase):
         self.login('caregiver')
         self.assertEqual(self.post('/api/residents/R001/observation',self.row(care_status='一般照護')).status_code,403)
         self.assertEqual(self.post('/api/residents/R001/observation',self.row()).status_code,200)
-        self.assertEqual(self.detail()['observations'][0]['care_status'],'尚未評估')
+        response=self.client.get('/api/residents/R001')
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.get_json()['observations'][0]['care_status'],'尚未評估')
         self.assertEqual(self.post('/api/residents/R003/observation',self.row()).status_code,403)
 
     def test_information_answer_is_offline_and_sourced(self):
@@ -285,7 +512,7 @@ class CareConsoleTests(unittest.TestCase):
     def test_caregiver_queue_stays_within_assigned_residents(self):
         self.login();self.send('轉人工','R003');self.send('轉人工','R001')
         self.login('caregiver');queue=self.client.get('/api/board').get_json()['work_queue']
-        self.assertEqual([q['id'] for q in queue],['R001'])
+        self.assertEqual(queue,[])  # A care assignment does not grant family-message access.
         self.assertEqual(self.post('/api/residents/R001/case/progress',self.progress()).status_code,403)
 
     def test_progress_requires_owner_and_resists_stale_overwrite(self):
@@ -368,7 +595,7 @@ class CareConsoleTests(unittest.TestCase):
         self.assertEqual(self.post('/api/residents/R002/message',dict(text='虛構：未配對住民',channel='demo_line',line_actor='family')).status_code,403)
         self.assertEqual(len(self.detail()['messages']),before)
         self.login('caregiver')
-        self.assertEqual(self.detail()['line_contacts'],[])
+        self.assertNotIn('line_contacts',self.client.get('/api/residents/R001').get_json())
         self.assertEqual(self.post('/api/residents/R001/message',dict(text='虛構：不得代為模擬',channel='demo_line',line_actor='family')).status_code,403)
 
     def test_former_resident_web_session_is_denied(self):

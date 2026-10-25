@@ -1,0 +1,2623 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "HITLGLOBAL 本機家屬訊息處理契約",
+    "version": "0.1.0",
+    "description": "現行本機流程子集，2026-10-25。監控／到期 API 尚未實作，另見 DATA_FLOW_API.md。此檔不會自動安裝服務端 schema 驗證。請求中額外身分欄位不作為授權來源。"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:9465",
+      "description": "本機虛構模式；測試可指定另一個 localhost port"
+    }
+  ],
+  "security": [
+    {
+      "sessionCookie": []
+    }
+  ],
+  "paths": {
+    "/api/session": {
+      "get": {
+        "summary": "取得工作階段與 CSRF 初始化資料",
+        "description": "",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-allowed-roles": [
+          "anonymous",
+          "admin",
+          "nurse",
+          "caregiver"
+        ],
+        "security": []
+      }
+    },
+    "/api/login": {
+      "post": {
+        "summary": "院內登入；家屬與住民拒絕",
+        "description": "POST 前先初始化 CSRF 與本機工作階段。密碼錯誤或速率限制另回應 401／429。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "登入次數過多",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logout": {
+      "post": {
+        "summary": "登出並清除工作階段",
+        "description": "",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OK"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/board": {
+      "get": {
+        "summary": "角色投影的住民看板與訊息待辦",
+        "description": "",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Board"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-allowed-roles": [
+          "admin",
+          "nurse",
+          "caregiver"
+        ]
+      }
+    },
+    "/api/residents/{rid}": {
+      "get": {
+        "summary": "讀照護資料；家屬對話限護理與管理角色",
+        "description": "照服員只有三個回應欄位；帶任何 conversation_id 會被拒絕。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/CaregiverDetail"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AssessorDetail"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "住民識別碼，不能使用床位替代。"
+          },
+          {
+            "name": "conversation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "僅限護理／管理角色；省略為院內舊紀錄。"
+          }
+        ],
+        "x-allowed-roles": [
+          "admin",
+          "nurse",
+          "caregiver"
+        ]
+      }
+    },
+    "/api/residents/{rid}/message": {
+      "post": {
+        "summary": "寫入本機模擬訊息",
+        "description": "必須核對來源及對話；actual_line_sent 固定 false。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "住民識別碼，不能使用床位替代。"
+          }
+        ],
+        "x-allowed-roles": [
+          "admin",
+          "nurse"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/residents/{rid}/observation": {
+      "post": {
+        "summary": "新增觀察；照服員不能設定評估",
+        "description": "數值與來源沿用既有驗證；未知值不補正常。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "住民識別碼，不能使用床位替代。"
+          }
+        ],
+        "x-allowed-roles": [
+          "admin",
+          "nurse",
+          "caregiver"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservationInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge": {
+      "get": {
+        "summary": "讀取一般服務資料來源",
+        "description": "",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-allowed-roles": [
+          "admin",
+          "nurse",
+          "caregiver"
+        ]
+      }
+    },
+    "/api/bindings": {
+      "get": {
+        "summary": "讀取本機工作範圍及模擬關係",
+        "description": "",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-allowed-roles": [
+          "admin"
+        ]
+      },
+      "post": {
+        "summary": "調整授權並取消撤銷關係的舊工作",
+        "description": "",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OK"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-allowed-roles": [
+          "admin"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindingInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/residents/{rid}/case/claim": {
+      "post": {
+        "summary": "接手待處理案件",
+        "description": "案件 ID、對話、穩定責任 ID 及適用版本須仍有效。核准／回覆另重查關係；完整 AI 正向驗收不包含於本輪。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OK"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "住民識別碼，不能使用床位替代。"
+          }
+        ],
+        "x-allowed-roles": [
+          "admin",
+          "nurse"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseRef"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/residents/{rid}/case/progress": {
+      "post": {
+        "summary": "以版本保存處理進度",
+        "description": "案件 ID、對話、穩定責任 ID 及適用版本須仍有效。核准／回覆另重查關係；完整 AI 正向驗收不包含於本輪。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OK"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "住民識別碼，不能使用床位替代。"
+          }
+        ],
+        "x-allowed-roles": [
+          "admin",
+          "nurse"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProgressInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/residents/{rid}/case/handoff": {
+      "post": {
+        "summary": "提出指定交班，原責任持續",
+        "description": "案件 ID、對話、穩定責任 ID 及適用版本須仍有效。核准／回覆另重查關係；完整 AI 正向驗收不包含於本輪。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OK"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "住民識別碼，不能使用床位替代。"
+          }
+        ],
+        "x-allowed-roles": [
+          "admin",
+          "nurse"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HandoffInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/residents/{rid}/case/accept_handoff": {
+      "post": {
+        "summary": "指定帳號確認接收交班",
+        "description": "案件 ID、對話、穩定責任 ID 及適用版本須仍有效。核准／回覆另重查關係；完整 AI 正向驗收不包含於本輪。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OK"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "住民識別碼，不能使用床位替代。"
+          }
+        ],
+        "x-allowed-roles": [
+          "admin",
+          "nurse"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/residents/{rid}/case/cancel_handoff": {
+      "post": {
+        "summary": "目前責任人取消交班",
+        "description": "案件 ID、對話、穩定責任 ID 及適用版本須仍有效。核准／回覆另重查關係；完整 AI 正向驗收不包含於本輪。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OK"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "住民識別碼，不能使用床位替代。"
+          }
+        ],
+        "x-allowed-roles": [
+          "admin",
+          "nurse"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseRef"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/residents/{rid}/case/reply": {
+      "post": {
+        "summary": "目前責任人於本機回覆",
+        "description": "案件 ID、對話、穩定責任 ID 及適用版本須仍有效。核准／回覆另重查關係；完整 AI 正向驗收不包含於本輪。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OK"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "住民識別碼，不能使用床位替代。"
+          }
+        ],
+        "x-allowed-roles": [
+          "admin",
+          "nurse"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplyInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/residents/{rid}/case/resolve": {
+      "post": {
+        "summary": "目前責任人結案並保留歷史",
+        "description": "案件 ID、對話、穩定責任 ID 及適用版本須仍有效。核准／回覆另重查關係；完整 AI 正向驗收不包含於本輪。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OK"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "住民識別碼，不能使用床位替代。"
+          }
+        ],
+        "x-allowed-roles": [
+          "admin",
+          "nurse"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/residents/{rid}/case/approve": {
+      "post": {
+        "summary": "目前責任人核准有效草稿",
+        "description": "案件 ID、對話、穩定責任 ID 及適用版本須仍有效。核准／回覆另重查關係；完整 AI 正向驗收不包含於本輪。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OK"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "住民識別碼，不能使用床位替代。"
+          }
+        ],
+        "x-allowed-roles": [
+          "admin",
+          "nurse"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/residents/{rid}/case/reject": {
+      "post": {
+        "summary": "目前責任人退回有效草稿",
+        "description": "案件 ID、對話、穩定責任 ID 及適用版本須仍有效。核准／回覆另重查關係；完整 AI 正向驗收不包含於本輪。",
+        "x-implementation-status": "本機已實作；真實 LINE 與正式部署未實作",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OK"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "格式錯誤或目前無有效案件／草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登入或院內身分失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色、資料範圍或目前責任不符",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "案件／進度／交班已變更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "操作未完成，須核對紀錄",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "住民識別碼，不能使用床位替代。"
+          }
+        ],
+        "x-allowed-roles": [
+          "admin",
+          "nurse"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectInput"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "care_console_session"
+      },
+      "csrfHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-CSRF-Token"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "OK": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "display_name",
+          "role"
+        ],
+        "additionalProperties": false
+      },
+      "Resident": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "bed_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ward": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "bed_id",
+          "ward"
+        ],
+        "additionalProperties": false
+      },
+      "Case": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "claimed"
+            ]
+          },
+          "trigger_risk": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "operator_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operator_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operator": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "trigger_risk",
+          "origin",
+          "created_at",
+          "operator_id",
+          "operator_name",
+          "operator"
+        ],
+        "additionalProperties": false
+      },
+      "CareCard": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "bed_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ward": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latest": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "assessment": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "bed_id",
+          "ward",
+          "latest",
+          "assessment"
+        ],
+        "additionalProperties": false
+      },
+      "AssessorCard": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "bed_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ward": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latest": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "assessment": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "pending_case": {
+            "type": "boolean"
+          },
+          "pending_count": {
+            "type": "integer"
+          },
+          "case_operator": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "risk": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "bed_id",
+          "ward",
+          "latest",
+          "assessment",
+          "state",
+          "pending_case",
+          "pending_count",
+          "case_operator",
+          "risk"
+        ],
+        "additionalProperties": false
+      },
+      "CaregiverDetail": {
+        "type": "object",
+        "properties": {
+          "resident": {
+            "$ref": "#/components/schemas/Resident"
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "role": {
+            "const": "caregiver"
+          }
+        },
+        "required": [
+          "resident",
+          "observations",
+          "role"
+        ],
+        "additionalProperties": false
+      },
+      "AssessorDetail": {
+        "type": "object",
+        "properties": {
+          "resident": {
+            "$ref": "#/components/schemas/Resident"
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "conversations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "selected_conversation": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": true
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "case": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Case"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "drafts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "workflow": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": true
+          },
+          "line_contacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "audit": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "role": {
+            "enum": [
+              "nurse",
+              "admin"
+            ]
+          }
+        },
+        "required": [
+          "resident",
+          "observations",
+          "conversations",
+          "selected_conversation",
+          "messages",
+          "case",
+          "state",
+          "drafts",
+          "workflow",
+          "line_contacts",
+          "audit",
+          "role"
+        ],
+        "additionalProperties": false
+      },
+      "Board": {
+        "type": "object",
+        "properties": {
+          "cards": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/CareCard"
+                },
+                {
+                  "$ref": "#/components/schemas/AssessorCard"
+                }
+              ]
+            }
+          },
+          "work_queue": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "synchronized_at": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "ai_enabled": {
+            "type": "boolean"
+          },
+          "line_mode": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "line_link": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "cards",
+          "work_queue",
+          "synchronized_at",
+          "mode",
+          "ai_enabled",
+          "line_mode",
+          "user",
+          "line_link"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "user": {
+                  "properties": {
+                    "role": {
+                      "const": "caregiver"
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "work_queue": {
+                  "maxItems": 0
+                },
+                "cards": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CareCard"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Login": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "\\S"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "additionalProperties": true
+      },
+      "CaseRef": {
+        "type": "object",
+        "properties": {
+          "case_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "conversation_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "case_id"
+        ],
+        "additionalProperties": true
+      },
+      "MessageInput": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "channel": {
+            "enum": [
+              "web",
+              "demo_line"
+            ],
+            "default": "web"
+          },
+          "line_actor": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": true,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "channel": {
+                  "const": "demo_line"
+                }
+              },
+              "required": [
+                "channel"
+              ]
+            },
+            "then": {
+              "required": [
+                "line_actor"
+              ]
+            }
+          }
+        ]
+      },
+      "ObservationInput": {
+        "type": "object",
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source_record_id": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "care_note": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "care_status": {
+            "enum": [
+              "尚未評估",
+              "一般照護",
+              "需追蹤",
+              "需優先確認"
+            ],
+            "default": "尚未評估"
+          },
+          "temperature_c": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "pulse_bpm": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "spo2_pct": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "systolic_mmhg": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "diastolic_mmhg": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "observed_at"
+        ],
+        "additionalProperties": true
+      },
+      "BindingInput": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "resident_id": {
+            "type": "string"
+          },
+          "allowed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "user_id",
+          "resident_id",
+          "allowed"
+        ],
+        "additionalProperties": true
+      },
+      "ProgressInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CaseRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string",
+                "maxLength": 1000,
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "next_action": {
+                "type": "string",
+                "maxLength": 1000,
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "waiting_for": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "summary",
+              "next_action",
+              "revision"
+            ],
+            "additionalProperties": true
+          }
+        ]
+      },
+      "HandoffInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProgressInput"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "to_user": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "to_user"
+            ],
+            "additionalProperties": true
+          }
+        ]
+      },
+      "AcceptInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CaseRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "request_id": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "request_id"
+            ],
+            "additionalProperties": true
+          }
+        ]
+      },
+      "ReplyInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CaseRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "additionalProperties": true
+          }
+        ]
+      },
+      "ResolveInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CaseRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "note": {
+                "type": "string",
+                "maxLength": 1000,
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            },
+            "required": [
+              "note"
+            ],
+            "additionalProperties": true
+          }
+        ]
+      },
+      "ApproveInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CaseRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "job_id": {
+                "type": "integer"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 1000,
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            },
+            "required": [
+              "job_id",
+              "text",
+              "note"
+            ],
+            "additionalProperties": true
+          }
+        ]
+      },
+      "RejectInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CaseRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "job_id": {
+                "type": "integer"
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 1000,
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            },
+            "required": [
+              "job_id",
+              "note"
+            ],
+            "additionalProperties": true
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "verified_date_taipei": "2026-10-25",
+  "base_commit": "18729be4178e431418cbcbce010ca409f0b30fa9",
+  "unit_tests": {
+    "run": 59,
+    "passed": 59,
+    "seconds": 141.5,
+    "test_list": "TEST_RESULTS.csv"
+  },
+  "openapi": {
+    "openapi": "3.1.0",
+    "validator": "openapi-spec-validator 0.7.2",
+    "paths": 18,
+    "matched_operations": 19,
+    "schema_checks": [
+      "caregiver detail allowlist",
+      "caregiver board without family cases",
+      "caregiver conversation error",
+      "caregiver schema rejects extra sensitive fields",
+      "nurse empty board",
+      "nurse pending case detail",
+      "claim request",
+      "claim response",
+      "nurse stable owner detail",
+      "ProgressInput",
+      "HandoffInput",
+      "ReplyInput",
+      "ResolveInput",
+      "caregiver board after sensitive case exists"
+    ],
+    "errors": []
+  },
+  "mermaid": {
+    "parser": "mermaid 12.2.0",
+    "total": 2,
+    "passed": 2,
+    "results": [
+      {
+        "file": "DATA_FLOW_API.md",
+        "diagram": 1,
+        "ok": true,
+        "type": "flowchart-v2"
+      },
+      {
+        "file": "DATA_FLOW_API.md",
+        "diagram": 2,
+        "ok": true,
+        "type": "sequence"
+      }
+    ]
+  },
+  "documents_and_syntax": {
+    "markdown_files": 10,
+    "mvp_markdown_files": 7,
+    "markdown_links_checked": 54,
+    "markdown_tables_checked": 25,
+    "python_files_parsed": 7,
+    "unit_tests": 59,
+    "unit_seconds": 141.5,
+    "frozen_core_changed": false,
+    "errors": []
+  },
+  "synthetic_demo": {
+    "checked_at": "2026-10-24T16:03:57+00:00",
+    "mode": "synthetic_local_demo",
+    "actual_line_sent": false,
+    "model_calls": 0,
+    "result": "passed",
+    "trace": [
+      {
+        "step": "家屬詢問建立待接手案件",
+        "state": "awaiting_takeover",
+        "case_id": 1,
+        "status": "pending",
+        "operator_id": null
+      },
+      {
+        "step": "護理師接手",
+        "state": "human_active",
+        "case_id": 1,
+        "status": "claimed",
+        "operator_id": "nurse"
+      },
+      {
+        "step": "一般新訊息保持人工責任",
+        "state": "human_active",
+        "case_id": 1,
+        "status": "claimed",
+        "operator_id": "nurse"
+      },
+      {
+        "step": "提出交班，原護理師持續負責",
+        "state": "human_active",
+        "case_id": 1,
+        "status": "claimed",
+        "operator_id": "nurse"
+      },
+      {
+        "step": "照服員仍可看照護紀錄，家屬對話及案件操作遭拒",
+        "status": "403 verified"
+      },
+      {
+        "step": "指定接班者確認接收",
+        "state": "human_active",
+        "case_id": 1,
+        "status": "claimed",
+        "operator_id": "nurse2"
+      },
+      {
+        "step": "新責任人於本機回覆",
+        "state": "human_active",
+        "case_id": 1,
+        "status": "claimed",
+        "operator_id": "nurse2"
+      },
+      {
+        "step": "完成結案並保留處理歷史",
+        "state": "automatic",
+        "case_id": 1,
+        "status": "closed",
+        "operator_id": null
+      },
+      {
+        "step": "重新載入後保留結案與責任 ID；另一聯絡人對話仍空白",
+        "status": "verified"
+      }
+    ]
+  },
+  "browser_checks": [
+    "empty nurse queue",
+    "claim and propose handoff",
+    "caregiver data and previous-role clearing",
+    "unsaved observation confirmation and save",
+    "handoff acceptance and reply",
+    "close and read history",
+    "admin reads existing closed history",
+    "caregiver offline state without family data"
+  ],
+  "browser_service_shutdown": true,
+  "core_files_modified": false,
+  "real_line_connected": false,
+  "real_resident_data_imported": false,
+  "unimplemented": [
+    "dedicated supervisor monitor",
+    "due dates and escalation notifications",
+    "production role separation",
+    "real LINE integration"
+  ],
+  "pending_validation": [
+    "institution SOP and staffing",
+    "formal AI quality acceptance",
+    "multi-process production deployment",
+    "mobile usability"
+  ]
+}

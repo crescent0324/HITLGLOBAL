@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from werkzeug.exceptions import Conflict
 from care_store import STAFF, ASSESSORS, stamp
+from migrations import migrate_case_owner_ids
 
 ORIGINS = {
     'user_request': '使用者要求轉人工', 'risk': '訊息分級觸發人工處理',
@@ -31,6 +32,7 @@ class StaffWorkflow:
             CREATE UNIQUE INDEX IF NOT EXISTS one_pending_handoff
               ON handoff_requests(case_id) WHERE status='pending';
             ''')
+        migrate_case_owner_ids(self)
 
     @contextmanager
     def transaction(self):
@@ -59,8 +61,25 @@ class StaffWorkflow:
         return dict(row)
 
     def require_owner(self, user, case):
-        if case['status'] != 'claimed' or case['operator'] != user['display_name']:
+        if case['status'] != 'claimed' or case.get('operator_id') != user['id']:
             raise PermissionError('只有目前接手帳號可以更新進度或交班。')
+
+    def identity(self, case):
+        uid = case.get('operator_id')
+        account = self.store.user(uid) if uid else None
+        name = account['display_name'] if account else ('舊資料責任人待確認' if case.get('operator') else None)
+        return {'operator_id': uid, 'operator_name': name, 'operator': name}
+
+    def claim(self, user, rid, case_id, conversation_id=None):
+        self.require_staff(user, rid, True)
+        with self.transaction() as db:
+            case = self.current_case(db, rid, conversation_id)
+            if case['id'] != case_id or case['status'] != 'pending':
+                raise Conflict('案件已變更或已接手，請更新紀錄後確認。')
+            db.execute("UPDATE cases SET status='claimed',claimed_at=?,operator=?,operator_id=? WHERE id=?",
+                       (stamp(), user['id'], user['id'], case_id))
+            self.service.log(db, case['conversation_id'], 'case_claimed', 'case='+str(case_id)+'; operator_id='+user['id'])
+            self.service.cancel_jobs(db, case['conversation_id'], '人工接手，自動生成作業停止。', only_auto=True)
 
     @staticmethod
     def latest_message(db, case):
@@ -83,7 +102,7 @@ class StaffWorkflow:
                 'time_label': '等待接手' if case['status'] == 'pending' else '案件持續時間'}
 
     def view(self, user, rid, source):
-        self.require_staff(user, rid)
+        self.require_staff(user, rid, True)
         case = source['case']
         with self.transaction() as db:
             note = db.execute('SELECT n.*,u.display_name AS updated_name FROM care.case_notes n JOIN care.users u ON u.id=n.updated_by WHERE case_id=?',
@@ -96,10 +115,11 @@ class StaffWorkflow:
             if handoff:
                 handoff['stale'] = handoff['message_id'] != self.latest_message(db, case)
             peers = [dict(r) for r in db.execute("SELECT id,display_name FROM care.users WHERE role IN ('admin','nurse') AND id!=?", (user['id'],))]
-            history = [dict(r) for r in db.execute('''SELECT c.id,c.closed_at,c.close_note,c.operator,
+            history = [dict(r) for r in db.execute('''SELECT c.id,c.closed_at,c.close_note,c.operator,c.operator_id,
                 n.summary,n.next_action,n.waiting_for FROM cases c LEFT JOIN care.case_notes n ON n.case_id=c.id
                 WHERE c.conversation_id=? AND c.status='closed' ORDER BY c.id DESC LIMIT 5''',
                                      (source['conversation']['id'],))]
+        history = [item | self.identity(item) for item in history]
         return {'context':self.context(source),'note':dict(note) if note else None,
                 'handoff':handoff,'peers':peers,'history':history}
 
@@ -107,9 +127,9 @@ class StaffWorkflow:
         case=source['case']; view=self.view(user,resident['id'],source)
         return {k:resident[k] for k in ('id','label','bed_id','ward')} | {
             'case_id':case['id'],'case_status':case['status'],'state':source['state'],
-            'message_risk':case['trigger_risk'],'operator':case['operator'],'created_at':case['created_at'],
+            'message_risk':case['trigger_risk'],**self.identity(case),'created_at':case['created_at'],
             'context':view['context'],'note':view['note'],'handoff':view['handoff'],
-            'mine':case['operator']==user['display_name'],
+            'mine':case.get('operator_id')==user['id'],
             'handoff_to_me':bool(view['handoff'] and view['handoff']['to_user']==user['id'])}
 
     @staticmethod
@@ -172,14 +192,14 @@ class StaffWorkflow:
             if not h or h['to_user']!=user['id']:
                 raise PermissionError('只有指定接班帳號可以接收有效交班。')
             old=self.store.user(h['from_user'])
-            if case['status']!='claimed' or not old or case['operator']!=old['display_name']:
+            if case['status']!='claimed' or not old or old['role'] not in ASSESSORS or case.get('operator_id')!=old['id']:
                 raise Conflict('案件責任人已變更，請重新確認。')
             if h['message_id']!=self.latest_message(db,case):
                 raise Conflict('交班提出後有新訊息或回覆，請原接手者更新內容並重新提出交班。')
-            db.execute('UPDATE cases SET operator=? WHERE id=?',(user['display_name'],case['id']))
+            db.execute('UPDATE cases SET operator=?,operator_id=? WHERE id=?',(user['id'],user['id'],case['id']))
             db.execute("UPDATE care.handoff_requests SET status='accepted',accepted_at=? WHERE id=?",(stamp(),request_id))
             self.service.cancel_jobs(db,case['conversation_id'],'交班已確認，舊生成工作不沿用。')
-            self.service.log(db,case['conversation_id'],'case_handoff_accepted','case='+str(case['id'])+'; operator='+user['display_name'])
+            self.service.log(db,case['conversation_id'],'case_handoff_accepted','case='+str(case['id'])+'; operator_id='+user['id'])
             self.log(db,user,'handoff_accepted',rid,'case='+str(case['id'])+'; from='+old['id'])
 
     def cancel(self, user, rid, conversation_id=None):

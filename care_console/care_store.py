@@ -298,8 +298,8 @@ class CareStore:
 
     def audit(self, user, rid):
         self.require(user, rid)
-        if user['role'] not in STAFF:
-            return []
+        if user['role'] not in ASSESSORS:
+            raise PermissionError('操作稽核僅限護理師或照護管理人員。')
         with self.db() as db:
             return [dict(r) for r in db.execute('SELECT * FROM audit WHERE resident_id=? ORDER BY id DESC LIMIT 40', (rid,))]
 
@@ -310,6 +310,8 @@ class CareStore:
 
     def authors(self, user, rid):
         self.require(user, rid)
+        if user['role'] not in ASSESSORS:
+            raise PermissionError('訊息身分僅限護理師或照護管理人員。')
         with self.db() as db:
             return {r['event_id']: dict(r) for r in db.execute('''SELECT m.event_id,m.actor,m.channel,u.display_name
               FROM message_authors m JOIN users u ON u.id=m.actor WHERE resident_id=?''', (rid,))}
