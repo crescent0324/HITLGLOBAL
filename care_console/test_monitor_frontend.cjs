@@ -41,7 +41,7 @@ async function boot(){
     // Deliberately ignore abort: a transport/server may already have delivered an old response.
     return new Promise((resolve,reject)=>requests.push({url:target,options,complete:(status,data)=>resolve(response(status,data)),fail:reject}));
   };
-  w.eval(fs.readFileSync(path.join(__dirname,'static/app.js'),'utf8'));
+  w.eval(fs.readFileSync(path.join(__dirname,'static/app.js'),'utf8')+'\nwindow.__uatTestToast=toast;');
   await until(()=>requests.length===1,'initial query missing');requests[0].complete(200,payload());
   await until(()=>w.document.querySelector('#monitor-rows').textContent.includes('初始'));
   h.rowText=()=>w.document.querySelector('#monitor-rows').textContent;
@@ -205,4 +205,49 @@ test('second history 409 stops recovery and keeps the error across polling',asyn
   h.requests[3].complete(409,{error:'第二次409停止重查'});await until(()=>h.document.querySelector('#monitor-events').textContent.includes('第二次409'));
   h.polls[0]();await tick();assert.equal(h.requests.length,4);
   assert.match(h.document.querySelector('#monitor-events').textContent,/第二次409停止重查/);
+});
+
+test('rejected action feedback stays inside the open resident modal accessibility scope',async()=>{
+  const h=await boot(),dialog=h.document.querySelector('#resident-dialog');
+  dialog.showModal();
+  const reason='交班提出後有新訊息或回覆，請原接手者更新內容並重新提出交班。';
+  h.window.__uatTestToast(reason,true);
+  const notice=dialog.querySelector('[role="status"]');
+  assert.ok(notice,'modal feedback must not be in the inert document behind its backdrop');
+  assert.equal(notice.textContent,reason);
+  assert.equal(notice.hidden,false);
+  assert.equal(h.document.querySelectorAll('#notice').length,1);
+});
+
+test('feedback follows nested discard modal then returns to the remaining modal or page',async()=>{
+  const h=await boot(),resident=h.document.querySelector('#resident-dialog'),discard=h.document.querySelector('#discard-dialog');
+  resident.showModal();discard.showModal();h.window.__uatTestToast('請先處理尚未保存內容',true);
+  assert.ok(discard.contains(h.document.querySelector('#notice')));
+  discard.close();h.window.__uatTestToast('虛構：<img src=x onerror=alert(1)>',true);
+  const notice=h.document.querySelector('#notice');
+  assert.ok(resident.contains(notice));
+  assert.equal(notice.querySelector('img'),null,'feedback must remain text');
+  resident.close();h.window.__uatTestToast('已回到工作台');
+  assert.equal(notice.parentElement,h.document.body);
+  assert.equal(notice.textContent,'已回到工作台');
+});
+
+test('closing and reopening a modal cannot revive the previous case success notice',async()=>{
+  const h=await boot(),dialog=h.document.querySelector('#resident-dialog');
+  dialog.showModal();h.window.__uatTestToast('案件已結案。');dialog.close();
+  h.document.querySelector('#resident-title').textContent='另一位虛構住民';dialog.showModal();
+  const notice=h.document.querySelector('#notice');
+  assert.equal(notice.hidden,true);
+  assert.equal(notice.textContent,'');
+  assert.equal(dialog.contains(notice),false);
+});
+
+test('closing discard clears its own message without clearing a newer message in another host',async()=>{
+  const h=await boot(),resident=h.document.querySelector('#resident-dialog'),discard=h.document.querySelector('#discard-dialog');
+  resident.showModal();discard.showModal();h.window.__uatTestToast('舊確認框訊息');discard.close();
+  discard.showModal();assert.equal(h.document.querySelector('#notice').hidden,true);discard.close();
+  h.window.__uatTestToast('目前住民的新訊息');
+  discard.dispatchEvent(new h.window.Event('close'));
+  assert.equal(h.document.querySelector('#notice').textContent,'目前住民的新訊息');
+  assert.equal(h.document.querySelector('#notice').hidden,false);
 });
