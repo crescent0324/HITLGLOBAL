@@ -2,10 +2,11 @@
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const roles = {admin:'管理者（護理長／IT）',nurse:'護理師',caregiver:'照服員',family:'家屬聯絡人',resident:'住民本人'};
+const roles = {admin:'IT 管理人員',head_nurse:'護理長',nurse:'護理師',caregiver:'照服員',family:'家屬聯絡人',resident:'住民本人'};
 const states = {automatic:'自動處理',awaiting_review:'待人工確認',awaiting_takeover:'待人工接管',human_active:'人工處理中'};
 const actionNames = {observation_added:'新增照護回報',message_submitted:'送出工作人員測試訊息',line_message_simulated:'模擬 LINE 傳入訊息',case_claim:'人工接手',case_reply:'人工回覆',case_resolve:'結案',case_approve:'核准草稿',case_reject:'退回草稿',access_granted:'授予查看權限',access_revoked:'取消查看權限',bed_changed:'床位異動',case_progress_saved:'保存處理進度',handoff_proposed:'提出交班',handoff_accepted:'接收交班',handoff_cancelled:'取消交班',case_progress:'更新進度',case_handoff:'交班操作',case_accept_handoff:'確認接收交班',case_cancel_handoff:'取消交班操作'};
-const appState = {user:null,csrf:null,cards:[],queue:[],page:'board',rid:null,cid:null,detail:null,toastTimer:null,busy:false,refreshing:false,progressDirty:false,progressCase:null,noteRevision:0};
+const appState = {user:null,csrf:null,cards:[],queue:[],page:'board',rid:null,cid:null,detail:null,toastTimer:null,busy:false,refreshing:false,progressDirty:false,progressCase:null,noteRevision:0,epoch:0};
+const monitorState = {filters:{status:'open',owner_id:'',from:'',to:'',limit:'10'},cursor:null,next:null,current:null,historyNext:null,sequence:0,loading:false};
 const formBaselines = new WeakMap();
 const discardDialog=document.createElement('dialog');
 discardDialog.id='discard-dialog';discardDialog.setAttribute('aria-labelledby','discard-title');
@@ -33,8 +34,9 @@ async function allowResidentExit() {
   return !unsavedResidentForms()||await confirmDiscard('這位住民尚有未保存或未送出的內容。放棄變更後，這些內容不會保存。');
 }
 async function closeResident() {if(await allowResidentExit())$('#resident-dialog').close();}
-const assessor = () => ['admin','nurse'].includes(appState.user?.role);
-const staff = () => ['admin','nurse','caregiver'].includes(appState.user?.role);
+const assessor = () => appState.user?.role==='nurse';
+const staff = () => ['nurse','caregiver'].includes(appState.user?.role);
+const supervisor = () => appState.user?.role==='head_nurse';
 const date = value => value ? new Date(value).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}) : '尚未回報';
 const duration = value => {const minutes=Math.floor(value/60);return minutes<1?'未滿 1 分鐘':minutes<60?`${minutes} 分鐘`:`${Math.floor(minutes/60)} 小時 ${minutes%60} 分鐘`;};
 const short = (value,limit=110) => String(value||'').length>limit?String(value).slice(0,limit)+'…':String(value||'');
@@ -43,11 +45,12 @@ function toast(text, bad=false) {
   clearTimeout(appState.toastTimer); appState.toastTimer=setTimeout(()=>box.hidden=true,6000);
 }
 async function api(path, data) {
+  const requestEpoch=appState.epoch;
   const response = await fetch(path,{method:data===undefined?'GET':'POST',credentials:'same-origin',headers:data===undefined?{}:{'Content-Type':'application/json','X-CSRF-Token':appState.csrf},body:data===undefined?undefined:JSON.stringify(data)});
   const body = await response.json();
   if (!response.ok) {
-    if (response.status===401 && path!=='/api/login') { await sessionView(); }
-    throw new Error(body.error || '操作未完成。');
+    if (response.status===401 && path!=='/api/login' && requestEpoch===appState.epoch && appState.user) { await sessionView(); }
+    const error=new Error(body.error || '操作未完成。');error.status=response.status;throw error;
   }
   return body;
 }
@@ -55,12 +58,14 @@ async function perform(fn, button) {
   if (appState.busy) return;
   appState.busy=true; if(button)button.disabled=true;
   try { await fn(); } catch(error) { toast(error.message,true); }
-  finally { appState.busy=false;if(button)button.disabled=false; }
+  finally { appState.busy=false;if(button){button.disabled=false;if(button.id==='monitor-next')button.disabled=!monitorState.next;if(button.id==='monitor-first')button.disabled=!monitorState.cursor;if(button.id==='monitor-older')button.disabled=!monitorState.historyNext;} }
 }
 function roleVisibility() {
   $$('.admin-only').forEach(el=>el.hidden=appState.user?.role!=='admin');
   $$('.assessor-only').forEach(el=>el.hidden=!assessor());
   $$('.staff-only').forEach(el=>el.hidden=!staff());
+  $$('.clinical-only').forEach(el=>el.hidden=!staff());
+  $$('.monitor-only').forEach(el=>el.hidden=!supervisor());
   $('#messages-tab .info-block p').textContent='查看與此住民相關的服務訊息。接手、審閱與人工回覆請至「人工處理」。目前尚未串接真實 LINE。';
   $('#care-status').disabled=appState.user?.role==='caregiver';
   const pendingFilter=$('#board-filter option[value="pending"]');
@@ -70,7 +75,12 @@ function roleVisibility() {
   if(!assessor() && ['mine','handoff'].includes($('#queue-filter').value))$('#queue-filter').value='all';
 }
 async function sessionView() {
-  const result = await api('/api/session'); appState.user=result.user;appState.csrf=result.csrf;
+  const epoch=++appState.epoch;
+  const result = await api('/api/session');if(epoch!==appState.epoch)return;appState.user=result.user;appState.csrf=result.csrf;
+  clearMonitor();
+  if($('#resident-dialog').open)$('#resident-dialog').close();
+  clearProtectedDetail();appState.rid=null;appState.cid=null;appState.detail=null;appState.cards=[];appState.queue=[];
+  ['#resident-cards','#stats','#observation-list','#work-queue','#care-followups'].forEach(s=>$(s).replaceChildren());
   $('#login-view').hidden=!!result.user;$('#app-view').hidden=!result.user;
   if(!result.user){ if($('#resident-dialog').open)$('#resident-dialog').close();appState.rid=null;appState.cid=null;appState.cards=[];appState.queue=[];appState.detail=null;appState.progressDirty=false;
     clearProtectedDetail();
@@ -78,7 +88,7 @@ async function sessionView() {
     return;
   }
   $('#user-name').textContent=result.user.display_name;$('#user-role').textContent=roles[result.user.role];$('#user-avatar').textContent=roles[result.user.role][0];
-  roleVisibility(); await showPage('board');
+  roleVisibility(); await showPage(supervisor()?'monitor':result.user.role==='admin'?'accounts':'board');
 }
 function badge(status) {
   const kind={'一般照護':'general','需追蹤':'track','需優先確認':'priority'}[status]||'';
@@ -88,10 +98,11 @@ function vital(label,value,unit) {
   return `<div class="vital"><span>${esc(label)}</span><strong>${esc(value??'—')}</strong><small>${esc(value==null?'':unit)}</small></div>`;
 }
 async function refreshBoard() {
-  if(appState.refreshing || !appState.user)return;
+  if(appState.refreshing || !staff())return;
+  const epoch=appState.epoch;
   appState.refreshing=true;
   try {
-    const body=await api('/api/board');appState.cards=body.cards;appState.queue=body.work_queue||[];
+    const body=await api('/api/board');if(epoch!==appState.epoch||!staff())return;appState.cards=body.cards;appState.queue=body.work_queue||[];
     $('#connection').textContent='最近同步 '+date(body.synchronized_at); renderBoard();
   } catch(error) {$('#connection').textContent='連線中斷 · 畫面保留上次資料';throw error;}
   finally{appState.refreshing=false;}
@@ -127,14 +138,15 @@ function renderQueue() {
   $('#followup-section').hidden=!followups.length;
   $('#care-followups').innerHTML=followups.map(c=>`<article class="followup-item"><div><strong>${esc(c.bed_id)} · ${esc(c.label)}</strong> ${badge(c.assessment.care_status)}<p>${esc(c.assessment.note||'來源未提供說明，需確認原始紀錄。')}</p><small>最近已評估紀錄 ${esc(date(c.assessment.observed_at))} · ${esc(c.assessment.source)}${c.assessment.id!==c.latest?.id?'<br>另有較新的未評估回報，尚未更新此評估紀錄。':''}</small></div><button data-followup-resident="${esc(c.id)}" class="secondary">查看回報 →</button></article>`).join('');
 }
-const pages={board:['照護工作台','查看訊息待辦、照護回報與交班進度。'],knowledge:['服務資訊','查看問答使用的官方資料摘要與查核日期。'],import:['資料匯入','檢查院內回報的欄位、時間與來源。'],accounts:['人員與授權','設定院內人員工作範圍與 LINE 聯絡人配對。']};
+const pages={board:['照護工作台','查看訊息待辦、照護回報與交班進度。'],monitor:['護理長案件監控','依授權範圍查看責任、下一步與處理歷程。此頁僅供查閱。'],knowledge:['服務資訊','查看問答使用的官方資料摘要與查核日期。'],import:['資料匯入','檢查院內回報的欄位、時間與來源。'],accounts:['人員與授權','管理工作範圍與模擬聯絡人配對；IT 身分不取得臨床內容。']};
 async function showPage(page) {
-  if(!pages[page] || page==='import'&&!assessor() || page==='accounts'&&appState.user.role!=='admin')page='board';
+  if(!pages[page] || page==='board'&&!staff() || page==='monitor'&&!supervisor() || page==='import'&&!assessor() || page==='accounts'&&appState.user.role!=='admin')page=supervisor()?'monitor':appState.user.role==='admin'?'accounts':'board';
   appState.page=page;$$('.page').forEach(el=>el.hidden=el.id!==page+'-page');$$('[data-page]').forEach(el=>el.classList.toggle('active',el.dataset.page===page));
   $('#page-title').textContent=pages[page][0];$('#page-description').textContent=page==='board'&&!assessor()?'查看工作範圍內的照護紀錄與觀察回報。':pages[page][1];
   if(page==='board')await refreshBoard();
   if(page==='knowledge')await loadKnowledge();
   if(page==='accounts')await loadAccounts();
+  if(page==='monitor')await refreshMonitor();
 }
 async function loadKnowledge() {
   const data=await api('/api/knowledge');
@@ -144,17 +156,96 @@ async function loadKnowledge() {
   }).join('');
 }
 async function loadAccounts() {
+  const epoch=appState.epoch;
   const data=await api('/api/bindings');
+  if(epoch!==appState.epoch||appState.user?.role!=='admin')return;
   const renderAccount=user=>{
-    const fixed=['admin','nurse'].includes(user.role);
+    const fixed=user.role==='admin';
     const linked=data.line_links.find(l=>l.user_id===user.id);
     const contact=['family','resident'].includes(user.role);
     const portal=contact?'LINE 聯絡人':'院內網頁帳號';
     const heading=contact?roles[user.role]:user.display_name;
-    return `<article class="account-card"><div><h3>${esc(heading)}</h3><p>${portal}<br>${contact?'聯絡代碼':'帳號'}：${esc(user.username)}${contact?`<br>模擬 LINE 識別碼：${esc(linked?.demo_line_id||'未配對')}`:`<br>${esc(roles[user.role])}`}</p></div><div>${fixed?'<p class="muted small">目前可查看全部體驗住民。</p>':`<p class="small muted">${contact?'配對住民':'工作範圍'}</p><div class="access-grid">${data.residents.map(r=>`<label class="check"><input type="checkbox" data-access-user="${esc(user.id)}" data-access-resident="${esc(r.id)}" ${data.access.some(a=>a.user_id===user.id&&a.resident_id===r.id)?'checked':''}>${esc(r.label)}（${esc(r.id)}）</label>`).join('')}</div>`}</div></article>`;
+    return `<article class="account-card"><div><h3>${esc(heading)}</h3><p>${portal}<br>${contact?'聯絡代碼':'帳號'}：${esc(user.username)}${contact?`<br>模擬 LINE 識別碼：${esc(linked?.demo_line_id||'未配對')}`:`<br>${esc(roles[user.role])}`}</p></div><div>${fixed?'<p class="muted small">IT 身分不取得住民照護與家屬案件權限。</p>':`<p class="small muted">${contact?'配對住民':'工作範圍'}</p><div class="access-grid">${data.residents.map(r=>`<label class="check"><input type="checkbox" data-access-user="${esc(user.id)}" data-access-resident="${esc(r.id)}" ${data.access.some(a=>a.user_id===user.id&&a.resident_id===r.id)?'checked':''}>${esc(r.label)}（${esc(r.id)}）</label>`).join('')}</div>`}</div></article>`;
   };
-  $('#account-list').innerHTML=data.users.filter(u=>['admin','nurse','caregiver'].includes(u.role)).map(renderAccount).join('');
+  $('#account-list').innerHTML=data.users.filter(u=>['admin','head_nurse','nurse','caregiver'].includes(u.role)).map(renderAccount).join('');
   $('#line-contact-list').innerHTML=data.users.filter(u=>['family','resident'].includes(u.role)).map(renderAccount).join('')||'<p class="muted">尚無 LINE 聯絡人配對。</p>';
+}
+function clearMonitor() {
+  monitorState.sequence++;monitorState.current=null;monitorState.cursor=null;monitorState.next=null;monitorState.historyNext=null;monitorState.loading=false;
+  monitorState.filters={status:'open',owner_id:'',from:'',to:'',limit:'10'};
+  ['#monitor-stats','#monitor-rows','#monitor-case','#monitor-events','#monitor-scope','#monitor-result'].forEach(s=>$(s).replaceChildren());
+  $('#monitor-filters').reset();$('#monitor-owner').innerHTML='<option value="">全部責任人</option><option value="__unassigned__">沒有責任 ID</option>';
+  $('#monitor-title').textContent='';$('#monitor-next').disabled=true;$('#monitor-first').disabled=true;$('#monitor-older').disabled=true;
+  if($('#monitor-dialog').open)$('#monitor-dialog').close();
+}
+const monitorDate=value=>value?new Date(value).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'—';
+const monitorStatus={pending:'待接手',claimed:'已接手',closed:'已結案'};
+const monitorOwner=c=>c.owner?.name||c.owner?.id||(c.status==='pending'?'尚未有人接手':'歷史責任身分待確認');
+function monitorQuery(cursor=null) {
+  const query=new URLSearchParams(Object.entries(monitorState.filters).filter(([,value])=>value!==''));
+  if(cursor)query.set('cursor',cursor);
+  return query.toString();
+}
+async function refreshMonitor(cursor=monitorState.cursor) {
+  if(!supervisor()||monitorState.loading)return;
+  monitorState.loading=true;monitorState.cursor=cursor;
+  const epoch=appState.epoch,selected=monitorState.current;
+  $('#monitor-result').textContent='正在載入授權範圍內的案件…';$('#monitor-rows').replaceChildren();$('#monitor-stats').replaceChildren();
+  if(selected){$('#monitor-case').replaceChildren();$('#monitor-events').textContent='正在重新核對案件權限…';}
+  $('#monitor-page').setAttribute('aria-busy','true');
+  try {
+    const data=await api('/api/case-monitor?'+monitorQuery(cursor));
+    if(epoch!==appState.epoch||!supervisor())return;
+    monitorState.next=data.next_cursor;
+    const metrics=[['待接手',data.stats.pending_cases,'尚未有人接手'],['已接手',data.stats.claimed_cases,'按案件計算'],['交班待接受',data.stats.pending_handoffs,'包含於已接手，不重複加總'],['已結案',data.stats.closed_cases,'依目前篩選條件']];
+    $('#monitor-stats').innerHTML=metrics.map(([label,n,note])=>`<div class="stat"><span>${label}</span><strong>${n}</strong><small>${note}</small></div>`).join('');
+    $('#monitor-scope').textContent=`目前授權住民：${data.scope_resident_ids.join('、')||'無'} · 更新 ${monitorDate(data.updated_at)}`;
+    $('#connection').textContent='最近同步 '+date(data.updated_at);
+    $('#monitor-result').textContent=`符合篩選 ${data.stats.total_cases} 件，未結案 ${data.stats.open_cases} 件；本頁 ${data.cases.length} 件。${data.stats.stale_handoffs?`另有 ${data.stats.stale_handoffs} 件交班須重新確認。`:''}`;
+    const chosen=monitorState.filters.owner_id;
+    const choices=data.owners.some(o=>o.id===chosen)||!chosen||chosen==='__unassigned__'?data.owners:[...data.owners,{id:chosen,name:chosen}];
+    $('#monitor-owner').innerHTML='<option value="">全部責任人</option><option value="__unassigned__">沒有責任 ID</option>'+choices.map(o=>`<option value="${esc(o.id)}">${esc(o.name||o.id)}（${esc(o.id)}）</option>`).join('');$('#monitor-owner').value=chosen;
+    $('#monitor-rows').innerHTML=data.cases.length?data.cases.map(c=>`<tr><td><strong>案件 #${c.id} · ${esc(c.resident.label)}</strong><small>${esc(c.resident.bed_id||'未配置床位')} · ${esc(c.contact.name)}${c.contact.active?'':' · 配對停用'}</small></td><td>${esc(monitorStatus[c.status])}<small>訊息風險 ${esc(c.message_risk)}</small></td><td>${esc(monitorOwner(c))}<small>${esc(c.owner?.id||'')}${c.status==='claimed'&&c.owner&&!c.owner.valid?' · 權限待確認':''}</small></td><td>${esc(c.progress?.next_action||'尚未記錄下一步')}<small>${esc(c.progress?.waiting_for||'')}</small></td><td>${c.handoff?`${esc(c.handoff.to_name||c.handoff.to_user)}<small>${c.handoff.valid?'等待指定帳號接受':'內容或權限已變更，須重提'}</small>`:'—'}</td><td>${esc(monitorDate(c.created_at))}<small>期限：${c.due_at?'待機構確認':'未設定'}</small></td><td><button class="secondary" data-monitor-case="${c.id}">查看歷程</button></td></tr>`).join(''):'<tr><td colspan="7"><div class="empty">目前沒有符合條件的授權案件。</div></td></tr>';
+    if(selected&&$('#monitor-dialog').open)await openMonitorCase(selected);
+  } catch(error) {
+    if(epoch!==appState.epoch)return;
+    monitorState.next=null;
+    if(error.status===409)monitorState.cursor=null;
+    ['#monitor-stats','#monitor-rows','#monitor-case','#monitor-events','#monitor-scope'].forEach(s=>$(s).replaceChildren());
+    $('#monitor-result').textContent='讀取失敗，監控資料已清除。'+error.message+' 請重新整理。';$('#connection').textContent='監控資料未同步';
+    if($('#monitor-dialog').open)$('#monitor-events').textContent='未取得最新授權資料，請關閉後重新查詢。';
+    if(error.status===403)await sessionView();
+  } finally {
+    if(epoch===appState.epoch){monitorState.loading=false;$('#monitor-page').setAttribute('aria-busy','false');$('#monitor-next').disabled=!monitorState.next;$('#monitor-first').disabled=!monitorState.cursor;}
+  }
+}
+function monitorEvent(event) {
+  const names={...actionNames,case_opened:'建立人工案件',message_received:'收到本機模擬訊息',legacy_snapshot:'升級前最新狀態快照',role_split_pending:'IT 職責分離，重新等待護理師接手'};
+  const p=event.payload,progress=p.progress||p;
+  const details=[progress.summary&&`已處理：${progress.summary}`,progress.next_action&&`下一步：${progress.next_action}`,progress.waiting_for&&`待確認：${progress.waiting_for}`,p.to_user&&`指定接班帳號：${p.to_user}`,p.from_user&&`原責任帳號：${p.from_user}`,p.operator_id&&`責任帳號：${p.operator_id}`,p.note&&`結案結果：${p.note}`,p.close_note&&`結案結果：${p.close_note}`].filter(Boolean);
+  return `<article class="monitor-event"><header><strong>${esc(names[event.action]||event.action)}</strong><time>${esc(monitorDate(event.created_at))}</time></header><small>${esc(event.actor_name||event.actor||'系統紀錄')}${event.actor?`（${esc(event.actor)}）`:''}${p.legacy?' · 舊版紀錄':''}</small>${details.map(t=>`<p>${esc(t)}</p>`).join('')}</article>`;
+}
+async function openMonitorCase(caseId,older=false) {
+  if(!supervisor())return;
+  const epoch=appState.epoch,sequence=++monitorState.sequence;
+  monitorState.current=caseId;
+  if(!$('#monitor-dialog').open)$('#monitor-dialog').showModal();
+  if(!older){$('#monitor-title').textContent='正在讀取案件';$('#monitor-case').replaceChildren();$('#monitor-events').textContent='正在核對權限並載入處理歷程…';}
+  const params=new URLSearchParams({limit:'20'});if(older&&monitorState.historyNext)params.set('cursor',monitorState.historyNext);
+  try {
+    const data=await api(`/api/case-monitor/${caseId}/timeline?${params}`);
+    if(epoch!==appState.epoch||sequence!==monitorState.sequence||!supervisor())return;
+    const c=data.case;monitorState.historyNext=data.next_cursor;
+    $('#monitor-title').textContent=`案件 #${c.id} · ${c.resident.label}`;
+    $('#monitor-case').innerHTML=`<div class="info-block compact"><p>${esc(c.contact.name)} · ${esc(monitorStatus[c.status])}</p><p>責任人：${esc(monitorOwner(c))} ${esc(c.owner?.id||'')} · 期限：${c.due_at?'待機構確認':'未設定'}</p><p>已處理：${esc(c.progress?.summary||'尚未記錄')}</p><p>下一步：${esc(c.progress?.next_action||'尚未記錄')}</p>${c.close_note?`<p>結案結果：${esc(c.close_note)}</p>`:''}</div><p class="small muted">${esc(data.history_note)} · 讀取 ${esc(monitorDate(data.updated_at))}</p>`;
+    const html=data.events.map(monitorEvent).join('');
+    if(older)$('#monitor-events').insertAdjacentHTML('beforeend',html);else $('#monitor-events').innerHTML=html||'<p class="empty">尚無處理事件。</p>';
+    $('#monitor-older').disabled=!data.next_cursor;
+  } catch(error) {
+    if(epoch!==appState.epoch||sequence!==monitorState.sequence)return;
+    $('#monitor-title').textContent='無法讀取案件';$('#monitor-case').replaceChildren();$('#monitor-events').textContent=error.message;$('#monitor-older').disabled=true;monitorState.historyNext=null;
+    if(error.status===403)await sessionView();
+  }
 }
 function selectTab(tab) {
   if(tab!=='records'&&!assessor())tab='records';
@@ -168,7 +259,9 @@ async function openResident(rid,tab='records',cid=null) {
 }
 async function loadResident(cid=appState.cid,resetConversation=false) {
   if(!appState.rid)return;
+  const epoch=appState.epoch,rid=appState.rid;
   const data=await api('/api/residents/'+appState.rid+(assessor()&&cid?'?conversation_id='+encodeURIComponent(cid):''));
+  if(epoch!==appState.epoch||rid!==appState.rid||!staff())return;
   if(assessor()&&!resetConversation && appState.detail?.selected_conversation?.id===data.selected_conversation.id &&
      appState.detail?.case?.id!==data.case?.id &&
      ['#human-reply-form','#resolve-form','#progress-form'].some(id=>formChanged($(id)))){
@@ -254,10 +347,11 @@ async function caseAction(action,payload={}) {
 }
 $('#login-form').addEventListener('submit',event=>{event.preventDefault();perform(async()=>{
   $('#login-error').textContent='';
+  appState.epoch++;
   try {const result=await api('/api/login',{username:$('#username').value,password:$('#password').value});appState.csrf=result.csrf;$('#password').value='';await sessionView();}
   catch(error){$('#login-error').textContent=error.message;}
 },$('button[type="submit"]',event.currentTarget));});
-$('#logout').addEventListener('click',async()=>{if(await allowResidentExit())perform(async()=>{await api('/api/logout',{});await sessionView();},$('#logout'));});
+$('#logout').addEventListener('click',async()=>{if(await allowResidentExit())perform(async()=>{appState.epoch++;await api('/api/logout',{});await sessionView();},$('#logout'));});
 $$('[data-page]').forEach(el=>el.addEventListener('click',()=>perform(()=>showPage(el.dataset.page),el)));
 $('#refresh').addEventListener('click',()=>perform(async()=>{await showPage(appState.page);if($('#resident-dialog').open)await loadResident();},$('#refresh')));
 $('#board-filter').addEventListener('change',renderBoard);
@@ -317,9 +411,17 @@ $('#import-submit').addEventListener('click',()=>perform(async()=>{
 function changeAccess(event) {const el=event.target.closest('[data-access-user]');const contact=event.currentTarget.id==='line-contact-list';if(el)perform(async()=>{try{await api('/api/bindings',{user_id:el.dataset.accessUser,resident_id:el.dataset.accessResident,allowed:el.checked});toast(contact?'LINE 聯絡人配對已更新。':'人員工作範圍已更新。');}finally{await loadAccounts();}},el);}
 $('#account-list').addEventListener('change',changeAccess);
 $('#line-contact-list').addEventListener('change',changeAccess);
-$('#backup').addEventListener('click',()=>perform(async()=>{
-  const response=await fetch('/api/backup',{method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':appState.csrf}});
-  if(!response.ok)throw new Error((await response.json()).error);const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='care-demo-backup.zip';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('本機備份已產生。');
-},$('#backup')));
-setInterval(()=>{if(appState.user && !document.hidden && !appState.busy)refreshBoard().catch(()=>{});},15000);
+$('#monitor-filters').addEventListener('submit',event=>{event.preventDefault();perform(async()=>{
+  const values=Object.fromEntries(new FormData(event.currentTarget));
+  for(const key of ['from','to'])if(values[key])values[key]=new Date(values[key]+'+08:00').toISOString();
+  monitorState.filters=values;monitorState.cursor=null;await refreshMonitor(null);
+},$('button[type="submit"]',event.currentTarget));});
+$('#monitor-reset').addEventListener('click',()=>perform(async()=>{clearMonitor();await refreshMonitor(null);},$('#monitor-reset')));
+$('#monitor-first').addEventListener('click',()=>perform(()=>refreshMonitor(null),$('#monitor-first')));
+$('#monitor-next').addEventListener('click',()=>perform(()=>refreshMonitor(monitorState.next),$('#monitor-next')));
+$('#monitor-rows').addEventListener('click',event=>{const el=event.target.closest('[data-monitor-case]');if(el)perform(()=>openMonitorCase(Number(el.dataset.monitorCase)),el);});
+$('#monitor-close').addEventListener('click',()=>$('#monitor-dialog').close());
+$('#monitor-dialog').addEventListener('close',()=>{monitorState.sequence++;monitorState.current=null;monitorState.historyNext=null;$('#monitor-title').textContent='';$('#monitor-case').replaceChildren();$('#monitor-events').replaceChildren();});
+$('#monitor-older').addEventListener('click',()=>perform(()=>openMonitorCase(monitorState.current,true),$('#monitor-older')));
+setInterval(()=>{if(appState.user&&!document.hidden&&!appState.busy){if(supervisor()&&appState.page==='monitor'&&!$('#monitor-filters').contains(document.activeElement))refreshMonitor().catch(()=>{});else if(staff()&&appState.page==='board')refreshBoard().catch(()=>{});}},15000);
 sessionView().catch(error=>{$('#login-error').textContent=error.message;});

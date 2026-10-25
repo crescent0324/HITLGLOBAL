@@ -1,0 +1,1004 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "HITLGLOBAL read-only head-nurse case monitor",
+    "version": "0.2.0",
+    "description": "Implemented local synthetic-data subset. Only head_nurse with current resident access. No deadline writers, escalation, reassignment or original message bodies. Other app endpoints are outside this subset."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:9465"
+    }
+  ],
+  "paths": {
+    "/api/case-monitor": {
+      "get": {
+        "operationId": "listScopedCases",
+        "summary": "listScopedCases",
+        "x-required-role": "head_nurse",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "open",
+                "all",
+                "pending",
+                "claimed",
+                "closed"
+              ],
+              "default": "open"
+            },
+            "description": ""
+          },
+          {
+            "name": "owner_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "description": "Stable account ID; __unassigned__ selects null owner."
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Inclusive case-created lower bound; timezone required."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Inclusive case-created upper bound; timezone required."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            },
+            "description": "Maximum rows per page."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Signed token bound to viewer, scope, filters and data revision; expires in 900 seconds."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized resident scope only. Read-only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Cursor context changed or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/case-monitor/{case_id}/timeline": {
+      "get": {
+        "operationId": "readScopedCaseTimeline",
+        "summary": "readScopedCaseTimeline",
+        "x-required-role": "head_nurse",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": ""
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "description": "Maximum rows per page."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Signed token bound to viewer, scope, filters and data revision; expires in 900 seconds."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized resident scope only. Read-only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Cursor context changed or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Case missing or outside current scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "care_console_session"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "Resident": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "bed_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ward": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "bed_id",
+          "ward"
+        ],
+        "additionalProperties": false
+      },
+      "Contact": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "active"
+        ],
+        "additionalProperties": false
+      },
+      "Owner": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "valid"
+        ],
+        "additionalProperties": false
+      },
+      "Progress": {
+        "type": "object",
+        "properties": {
+          "next_action": {
+            "type": "string"
+          },
+          "waiting_for": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "next_action",
+          "waiting_for",
+          "revision",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      },
+      "DetailedProgress": {
+        "type": "object",
+        "properties": {
+          "next_action": {
+            "type": "string"
+          },
+          "waiting_for": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "next_action",
+          "waiting_for",
+          "revision",
+          "updated_at",
+          "summary"
+        ],
+        "additionalProperties": false
+      },
+      "Handoff": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "from_user": {
+            "type": "string"
+          },
+          "from_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to_user": {
+            "type": "string"
+          },
+          "to_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "message_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "from_user",
+          "from_name",
+          "to_user",
+          "to_name",
+          "created_at",
+          "message_id",
+          "stale",
+          "valid"
+        ],
+        "additionalProperties": false
+      },
+      "CaseSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "claimed",
+              "closed"
+            ]
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "conversation_kind": {
+            "enum": [
+              "internal",
+              "contact"
+            ]
+          },
+          "resident": {
+            "$ref": "#/components/schemas/Resident"
+          },
+          "contact": {
+            "$ref": "#/components/schemas/Contact"
+          },
+          "owner": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Owner"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "message_risk": {
+            "enum": [
+              "低",
+              "中",
+              "高"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "claimed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "closed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "close_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "progress": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Progress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "handoff": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Handoff"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "due_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "deadline_status": {
+            "enum": [
+              "unset",
+              "unverified"
+            ]
+          },
+          "overdue": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "conversation_id",
+          "conversation_kind",
+          "resident",
+          "contact",
+          "owner",
+          "origin",
+          "reason",
+          "message_risk",
+          "created_at",
+          "claimed_at",
+          "closed_at",
+          "close_note",
+          "progress",
+          "handoff",
+          "due_at",
+          "deadline_status",
+          "overdue"
+        ],
+        "additionalProperties": false
+      },
+      "CaseDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "claimed",
+              "closed"
+            ]
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "conversation_kind": {
+            "enum": [
+              "internal",
+              "contact"
+            ]
+          },
+          "resident": {
+            "$ref": "#/components/schemas/Resident"
+          },
+          "contact": {
+            "$ref": "#/components/schemas/Contact"
+          },
+          "owner": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Owner"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "message_risk": {
+            "enum": [
+              "低",
+              "中",
+              "高"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "claimed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "closed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "close_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "progress": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DetailedProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "handoff": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Handoff"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "due_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "deadline_status": {
+            "enum": [
+              "unset",
+              "unverified"
+            ]
+          },
+          "overdue": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "conversation_id",
+          "conversation_kind",
+          "resident",
+          "contact",
+          "owner",
+          "origin",
+          "reason",
+          "message_risk",
+          "created_at",
+          "claimed_at",
+          "closed_at",
+          "close_note",
+          "progress",
+          "handoff",
+          "due_at",
+          "deadline_status",
+          "overdue"
+        ],
+        "additionalProperties": false
+      },
+      "Statistics": {
+        "type": "object",
+        "properties": {
+          "total_cases": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "open_cases": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pending_cases": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "claimed_cases": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "closed_cases": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pending_handoffs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stale_handoffs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deadline_unset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "overdue_cases": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "total_cases",
+          "open_cases",
+          "pending_cases",
+          "claimed_cases",
+          "closed_cases",
+          "pending_handoffs",
+          "stale_handoffs",
+          "deadline_unset",
+          "overdue_cases"
+        ],
+        "additionalProperties": false
+      },
+      "Filters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "enum": [
+              "open",
+              "all",
+              "pending",
+              "claimed",
+              "closed"
+            ]
+          },
+          "owner_id": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "status",
+          "owner_id",
+          "from",
+          "to",
+          "limit"
+        ],
+        "additionalProperties": false
+      },
+      "OwnerOption": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "ListResponse": {
+        "type": "object",
+        "properties": {
+          "cases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CaseSummary"
+            }
+          },
+          "stats": {
+            "$ref": "#/components/schemas/Statistics"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/Filters"
+          },
+          "owners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OwnerOption"
+            }
+          },
+          "scope_resident_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "statistics_note": {
+            "type": "string"
+          },
+          "deadline_note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cases",
+          "stats",
+          "filters",
+          "owners",
+          "scope_resident_ids",
+          "next_cursor",
+          "updated_at",
+          "statistics_note",
+          "deadline_note"
+        ],
+        "additionalProperties": false
+      },
+      "Activity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "case_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "action": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "description": "Action-specific saved progress/identity metadata; original message text is not included."
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "case_id",
+          "actor",
+          "actor_name",
+          "action",
+          "payload",
+          "created_at"
+        ],
+        "additionalProperties": false
+      },
+      "TimelineResponse": {
+        "type": "object",
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/CaseDetail"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Activity"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "history_note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "case",
+          "events",
+          "next_cursor",
+          "updated_at",
+          "history_note"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

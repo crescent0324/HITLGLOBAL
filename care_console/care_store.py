@@ -11,9 +11,10 @@ import secrets
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
 
-ROLES = {'admin': '管理者', 'nurse': '護理師', 'caregiver': '照服員', 'family': '家屬', 'resident': '住民'}
-STAFF = {'admin', 'nurse', 'caregiver'}
-ASSESSORS = {'admin', 'nurse'}
+ROLES = {'admin': 'IT 管理人員', 'head_nurse': '護理長', 'nurse': '護理師', 'caregiver': '照服員', 'family': '家屬', 'resident': '住民'}
+STAFF = {'admin', 'head_nurse', 'nurse', 'caregiver'}
+CLINICAL_STAFF = {'nurse', 'caregiver'}
+ASSESSORS = {'nurse'}
 STATUSES = {'尚未評估', '一般照護', '需追蹤', '需優先確認'}
 CSV_FIELDS = ['resident_code', 'source_record_id', 'observed_at', 'temperature_c',
               'pulse_bpm', 'spo2_pct', 'systolic_mmhg', 'diastolic_mmhg', 'care_status', 'care_note']
@@ -63,6 +64,8 @@ class CareStore:
             CREATE TABLE IF NOT EXISTS line_links(user_id TEXT PRIMARY KEY, demo_line_id TEXT UNIQUE NOT NULL,
               confirmed_by TEXT NOT NULL, confirmed_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS staff_role_migrations(
+              user_id TEXT PRIMARY KEY,old_role TEXT NOT NULL,recorded_at TEXT NOT NULL);
             ''')
         self.seed()
         self.ensure_shift_account()
@@ -104,6 +107,9 @@ class CareStore:
                 db.execute('INSERT INTO access VALUES(?,?)', (role, 'R001'))
             for rid in ('R001', 'R002'):
                 db.execute('INSERT INTO access VALUES(?,?)', ('caregiver', rid))
+                db.execute('INSERT INTO access VALUES(?,?)', ('head_nurse', rid))
+            for i in range(1, 7):
+                db.execute('INSERT INTO access VALUES(?,?)', ('nurse', f'R{i:03}'))
             for role in ROLES:
                 db.execute('INSERT INTO line_links VALUES(?,?,?,?)', (role, 'demo-line-' + role, 'admin', stamp()))
             db.execute("INSERT INTO meta VALUES('seeded','1')")
@@ -130,10 +136,15 @@ class CareStore:
         if not user:
             return False
         with self.db() as db:
-            if not db.execute('SELECT 1 FROM residents WHERE id=? AND active=1', (rid,)).fetchone():
-                return False
-            return user['role'] in {'admin', 'nurse'} or bool(db.execute(
-                'SELECT 1 FROM access WHERE user_id=? AND resident_id=?', (user['id'], rid)).fetchone())
+            return bool(db.execute('''SELECT 1 FROM access a
+                JOIN users u ON u.id=a.user_id JOIN residents r ON r.id=a.resident_id
+                WHERE a.user_id=? AND a.resident_id=? AND r.active=1
+                  AND u.role IN ('nurse','head_nurse','caregiver','family','resident')''',
+                (user['id'], rid)).fetchone())
+
+    def resident_active(self, rid):
+        with self.db() as db:
+            return bool(db.execute('SELECT 1 FROM residents WHERE id=? AND active=1', (rid,)).fetchone())
 
     def require(self, user, rid):
         if not self.allowed(user, rid):
@@ -161,7 +172,8 @@ class CareStore:
                 o.entered_by,o.care_status,o.note,u.display_name AS entered_name
                 FROM observations o JOIN users u ON u.id=o.entered_by
                 WHERE o.resident_id=? AND o.care_status!='尚未評估'
-                  AND u.role IN ('admin','nurse')
+                  AND (u.role='nurse' OR EXISTS(SELECT 1 FROM staff_role_migrations m
+                    WHERE m.user_id=u.id AND m.old_role='admin' AND o.received_at<=m.recorded_at))
                 ORDER BY o.observed_at DESC,o.id DESC LIMIT 1''', (rid,)).fetchone()
         return dict(row) if row else None
 
@@ -171,7 +183,7 @@ class CareStore:
 
     def validated_observation(self, user, rid, data):
         self.require(user, rid)
-        if user['role'] not in STAFF:
+        if user['role'] not in CLINICAL_STAFF:
             raise PermissionError('照護回報僅限工作人員操作。')
         status = str(data.get('care_status', '尚未評估'))
         if status not in STATUSES:
@@ -286,9 +298,13 @@ class CareStore:
     def grant(self, user, target, rid, allowed):
         if user['role'] != 'admin':
             raise PermissionError('帳號授權僅限管理者操作。')
-        if not self.user(target):
+        account = self.user(target)
+        if not account:
             raise ValueError('帳號不存在。')
-        self.require(user, rid)
+        if account['role'] == 'admin':
+            raise PermissionError('IT 管理身分不能取得住民照護或家屬案件權限。')
+        if not self.resident_active(rid):
+            raise ValueError('住民不存在或已停用。')
         with self.db() as db:
             if allowed:
                 db.execute('INSERT OR IGNORE INTO access VALUES(?,?)', (target, rid))

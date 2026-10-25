@@ -1,0 +1,229 @@
+{
+  "verified_at_taipei": "2026-10-25T10:02:52+08:00",
+  "base_commit": "e7f319973806c89fc49eb3be0e1c59dc4cbf6034",
+  "unit_tests": {
+    "run": 77,
+    "passed": 77,
+    "seconds": 206.66,
+    "original_test_names": 59,
+    "new_test_names": 18,
+    "test_log_sha256": "461ad8900d5113c09a319c31dafd7f93fa6b6903f2b9f422d5927134ade105b7"
+  },
+  "openapi": {
+    "openapi": "3.1.0",
+    "validator": "openapi-spec-validator 0.7.2",
+    "paths": 2,
+    "matched_operations": 2,
+    "schemas": 15,
+    "schema_checks": [
+      "empty authorized monitor",
+      "pending case and nullable deadline",
+      "claimed owner and valid handoff",
+      "saved progress snapshots and structured activity",
+      "first signed page",
+      "next signed page",
+      "summary schema rejects extra original-message field",
+      "admin monitor forbidden",
+      "nurse monitor forbidden",
+      "caregiver monitor forbidden",
+      "unknown or out-of-scope case concealed",
+      "bad limit error projection",
+      "closed case result and accepted owner"
+    ],
+    "errors": []
+  },
+  "research_validation": {
+    "counts": {
+      "CODE_EVIDENCE.csv": 18,
+      "CODE_INVENTORY.csv": 53,
+      "FUNCTION_MATRIX.csv": 125,
+      "HITLGLOBAL_FEATURE_AUDIT.csv": 125,
+      "PUBLIC_GAPS.csv": 221,
+      "SOURCE_CATALOG.csv": 65,
+      "TEST_EVIDENCE.csv": 47,
+      "TRAINING_VIDEO_CATALOG.csv": 86,
+      "UI_EVIDENCE.csv": 167
+    },
+    "markdown_files": 13,
+    "markdown_links_checked": 1238,
+    "markdown_tables_checked": 64,
+    "matrix_markdown_rows": 125,
+    "base_inventory_hashes_checked": 53,
+    "errors": []
+  },
+  "synthetic_demo": {
+    "checked_at": "2026-10-25T01:58:16+00:00",
+    "result": "passed",
+    "mode": "synthetic_local_demo",
+    "model_calls": 0,
+    "actual_line_sent": false,
+    "trace": [
+      {
+        "step": "護理長看到待接手，未設定期限不判定逾期",
+        "pending": 1,
+        "due_at": null,
+        "overdue_cases": null
+      },
+      {
+        "step": "護理師提出交班，護理長看到同一件已接手案件",
+        "owner_id": "nurse",
+        "open_cases": 1,
+        "claimed_cases": 1,
+        "pending_handoffs": 1
+      },
+      {
+        "step": "照服員保存未評估觀察，無主管 API 與家屬案件權限",
+        "observation": "尚未評估",
+        "monitor_status": 403,
+        "reply_status": 403
+      },
+      {
+        "step": "指定接班者接受、回覆、結案；舊責任帳號遭拒",
+        "owner_id": "nurse2",
+        "previous_owner_resolve_status": 403
+      },
+      {
+        "step": "護理長依責任與結案狀態查看進度及歷程，維持唯讀",
+        "case_id": 1,
+        "history_events": 8,
+        "reply_status": 403
+      },
+      {
+        "step": "IT 只管理授權；撤權立即影響護理長既有工作階段",
+        "it_detail_status": 403,
+        "it_backup_status": 403,
+        "revoked_timeline_status": 404
+      },
+      {
+        "step": "重新載入保留結案與責任 ID",
+        "status": "closed",
+        "operator_id": "nurse2"
+      }
+    ]
+  },
+  "mermaid_validation": {
+    "parser": "mermaid 12.2.0",
+    "total": 2,
+    "passed": 2,
+    "results": [
+      {
+        "file": "DATA_FLOW_API.md",
+        "diagram": 1,
+        "ok": true,
+        "type": "flowchart-v2"
+      },
+      {
+        "file": "DATA_FLOW_API.md",
+        "diagram": 2,
+        "ok": true,
+        "type": "sequence"
+      }
+    ]
+  },
+  "core_files_byte_compared": 23,
+  "core_unchanged": true,
+  "source_sha256": {
+    "care_console/app.py": "0beee32245ba0bc1d7c2420351042bf921adca7d5c27e04ff3baaecb30d9d24d",
+    "care_console/backup_local.py": "1b3636ef515e305d42667081a575bce92b04bef9ed333f25f110057636b526ec",
+    "care_console/care_store.py": "b8fda43e0aec3cb6854f0e650caacb1e0ceb1e32e33fbf17218d5d4d719c57c2",
+    "care_console/case_monitor.py": "34f326498fd9ba853db3cdb5c95d211f54b7b29dd5d6225c8cd5c619916a455f",
+    "care_console/conversations.py": "2e4b8ecbf8e4691df1107b7f214479f616677e546f6e7ca6c3023bd701026ef2",
+    "care_console/demo_monitor.py": "5dc907c105ee43040fbcf5cba431dc14142913e1e78e79ded0a9af74c58303b2",
+    "care_console/migrations.py": "ddcdfcbb3370cbd014ca7823afed0e05bb6620a3bba3de1dc87296e322746d6f",
+    "care_console/test_care_console.py": "8adfafd562268078397f6c90455dc69bf1d64fe09eec4b0b7c8f8959165cec0e",
+    "care_console/test_case_monitor.py": "9ebb10e52197c8d64e6e4296800bb9bdc1d6c3e9ece7e6d99cf16179d9604270",
+    "care_console/workflow.py": "cde394b7947e2e422131a2611302a295fcc3b49a345afdcb07d0cc82fcb6ad0d",
+    "care_console/static/app.js": "65059c205584a2f4a9ea39b48e49ad2641539fe06dde2a97b5a6e8f5b47a2210",
+    "care_console/static/monitor.css": "3e419ebf96be2241d93c8a7a28265024ccfa0ade8ca7922fd47d43e1d95084b4",
+    "care_console/templates/index.html": "c989db4ac606fe95a602917ba8d932d2d8aa16d5fa8d7218dfbc64bcaef17c5f"
+  },
+  "browser_checks": [
+    "empty and loading",
+    "nurse creates claims and proposes handoff",
+    "head nurse reads scope and history",
+    "14 scoped cases paginated 10+4; R003 hidden",
+    "status owner and Taiwan-time filters",
+    "bad-time error preserves filters and clears data",
+    "caregiver observation and unsaved confirmation",
+    "nurse2 accepts replies and closes",
+    "head nurse revocation clears open history",
+    "IT management without clinical data or web backup",
+    "background GET during logout followed by IT login",
+    "offline clears monitor data"
+  ],
+  "browser_test_server_stopped": true,
+  "real_line_connected": false,
+  "real_resident_data_used": false,
+  "unimplemented": [
+    "deadlines and escalation notifications",
+    "automatic or forced reassignment",
+    "production staff lifecycle",
+    "real LINE",
+    "multi-institution service"
+  ],
+  "pending_validation": [
+    "institution SOP and scope approval",
+    "staffing and emergency pathways",
+    "production security and OS backup custody",
+    "mobile field usability"
+  ],
+  "documents_and_syntax": {
+    "markdown_files": 15,
+    "links_checked": 81,
+    "tables_checked": 30,
+    "python_files_parsed": 10,
+    "errors": []
+  },
+  "screenshots": [
+    {
+      "name": "caregiver-observation.jpg",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "name": "head-nurse-closed-history.jpg",
+      "width": 619,
+      "height": 884
+    },
+    {
+      "name": "head-nurse-empty.jpg",
+      "width": 1265,
+      "height": 712
+    },
+    {
+      "name": "head-nurse-history.jpg",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "name": "head-nurse-monitor.jpg",
+      "width": 604,
+      "height": 1375
+    },
+    {
+      "name": "head-nurse-offline.jpg",
+      "width": 604,
+      "height": 1019
+    },
+    {
+      "name": "head-nurse-pending-handoff.jpg",
+      "width": 1265,
+      "height": 1088
+    },
+    {
+      "name": "head-nurse-revoked.jpg",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "name": "it-admin-boundary.jpg",
+      "width": 604,
+      "height": 863
+    },
+    {
+      "name": "nurse-case-closed.jpg",
+      "width": 1280,
+      "height": 720
+    }
+  ]
+}

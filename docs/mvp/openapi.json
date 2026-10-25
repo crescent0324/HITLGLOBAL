@@ -3,7 +3,7 @@
   "info": {
     "title": "HITLGLOBAL 本機家屬訊息處理契約",
     "version": "0.1.0",
-    "description": "現行本機流程子集，2026-10-25。監控／到期 API 尚未實作，另見 DATA_FLOW_API.md。此檔不會自動安裝服務端 schema 驗證。請求中額外身分欄位不作為授權來源。"
+    "description": "Historical PR #2 contract at main e7f3199 before head-nurse and IT separation. Current monitor contract and role boundaries: ../monitor/openapi.json and ../monitor/API.md. 現行本機流程子集，2026-10-25。監控／到期 API 尚未實作，另見 DATA_FLOW_API.md。此檔不會自動安裝服務端 schema 驗證。請求中額外身分欄位不作為授權來源。"
   },
   "servers": [
     {
