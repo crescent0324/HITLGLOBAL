@@ -6,7 +6,7 @@ const roles = {admin:'IT 管理人員',head_nurse:'護理長',nurse:'護理師',
 const states = {automatic:'自動處理',awaiting_review:'待人工確認',awaiting_takeover:'待人工接管',human_active:'人工處理中'};
 const actionNames = {observation_added:'新增照護回報',message_submitted:'送出工作人員測試訊息',line_message_simulated:'模擬 LINE 傳入訊息',case_claim:'人工接手',case_reply:'人工回覆',case_resolve:'結案',case_approve:'核准草稿',case_reject:'退回草稿',access_granted:'授予查看權限',access_revoked:'取消查看權限',bed_changed:'床位異動',case_progress_saved:'保存處理進度',handoff_proposed:'提出交班',handoff_accepted:'接收交班',handoff_cancelled:'取消交班',case_progress:'更新進度',case_handoff:'交班操作',case_accept_handoff:'確認接收交班',case_cancel_handoff:'取消交班操作'};
 const appState = {user:null,csrf:null,cards:[],queue:[],page:'board',rid:null,cid:null,detail:null,toastTimer:null,busy:false,refreshing:false,progressDirty:false,progressCase:null,noteRevision:0,epoch:0};
-const monitorState = {filters:{status:'open',owner_id:'',from:'',to:'',limit:'10'},cursor:null,next:null,current:null,historyNext:null,sequence:0,loading:false};
+const monitorState = {filters:{status:'open',owner_id:'',from:'',to:'',limit:'10'},cursor:null,next:null,current:null,historyNext:null,sequence:0,loading:false,requestId:0,controller:null,historyController:null,error:false,historyError:false,historyLoading:false};
 const formBaselines = new WeakMap();
 const discardDialog=document.createElement('dialog');
 discardDialog.id='discard-dialog';discardDialog.setAttribute('aria-labelledby','discard-title');
@@ -44,12 +44,12 @@ function toast(text, bad=false) {
   const box = $('#notice'); box.textContent = text; box.classList.toggle('bad',bad); box.hidden=false;
   clearTimeout(appState.toastTimer); appState.toastTimer=setTimeout(()=>box.hidden=true,6000);
 }
-async function api(path, data) {
+async function api(path, data, options={}) {
   const requestEpoch=appState.epoch;
-  const response = await fetch(path,{method:data===undefined?'GET':'POST',credentials:'same-origin',headers:data===undefined?{}:{'Content-Type':'application/json','X-CSRF-Token':appState.csrf},body:data===undefined?undefined:JSON.stringify(data)});
+  const response = await fetch(path,{method:data===undefined?'GET':'POST',credentials:'same-origin',headers:data===undefined?{}:{'Content-Type':'application/json','X-CSRF-Token':appState.csrf},body:data===undefined?undefined:JSON.stringify(data),signal:options.signal});
   const body = await response.json();
   if (!response.ok) {
-    if (response.status===401 && path!=='/api/login' && requestEpoch===appState.epoch && appState.user) { await sessionView(); }
+    if (response.status===401 && path!=='/api/login' && requestEpoch===appState.epoch && appState.user && (!options.isCurrent||options.isCurrent())) { await sessionView(); }
     const error=new Error(body.error || '操作未完成。');error.status=response.status;throw error;
   }
   return body;
@@ -76,6 +76,7 @@ function roleVisibility() {
 }
 async function sessionView() {
   const epoch=++appState.epoch;
+  clearMonitor();
   const result = await api('/api/session');if(epoch!==appState.epoch)return;appState.user=result.user;appState.csrf=result.csrf;
   clearMonitor();
   if($('#resident-dialog').open)$('#resident-dialog').close();
@@ -88,7 +89,9 @@ async function sessionView() {
     return;
   }
   $('#user-name').textContent=result.user.display_name;$('#user-role').textContent=roles[result.user.role];$('#user-avatar').textContent=roles[result.user.role][0];
-  roleVisibility(); await showPage(supervisor()?'monitor':result.user.role==='admin'?'accounts':'board');
+  roleVisibility();
+  if(supervisor()){monitorRead(()=>showPage('monitor'));return;}
+  await showPage(result.user.role==='admin'?'accounts':'board');
 }
 function badge(status) {
   const kind={'一般照護':'general','需追蹤':'track','需優先確認':'priority'}[status]||'';
@@ -171,52 +174,78 @@ async function loadAccounts() {
   $('#line-contact-list').innerHTML=data.users.filter(u=>['family','resident'].includes(u.role)).map(renderAccount).join('')||'<p class="muted">尚無 LINE 聯絡人配對。</p>';
 }
 function clearMonitor() {
+  monitorState.requestId++;monitorState.controller?.abort();monitorState.historyController?.abort();monitorState.controller=null;monitorState.error=false;monitorState.historyError=false;monitorState.historyLoading=false;
   monitorState.sequence++;monitorState.current=null;monitorState.cursor=null;monitorState.next=null;monitorState.historyNext=null;monitorState.loading=false;
   monitorState.filters={status:'open',owner_id:'',from:'',to:'',limit:'10'};
   ['#monitor-stats','#monitor-rows','#monitor-case','#monitor-events','#monitor-scope','#monitor-result'].forEach(s=>$(s).replaceChildren());
   $('#monitor-filters').reset();$('#monitor-owner').innerHTML='<option value="">全部責任人</option><option value="__unassigned__">沒有責任 ID</option>';
+  rememberForm($('#monitor-filters'));
   $('#monitor-title').textContent='';$('#monitor-next').disabled=true;$('#monitor-first').disabled=true;$('#monitor-older').disabled=true;
   if($('#monitor-dialog').open)$('#monitor-dialog').close();
+  $('#monitor-page').setAttribute('aria-busy','false');
 }
 const monitorDate=value=>value?new Date(value).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'—';
 const monitorStatus={pending:'待接手',claimed:'已接手',closed:'已結案'};
 const monitorOwner=c=>c.owner?.name||c.owner?.id||(c.status==='pending'?'尚未有人接手':'歷史責任身分待確認');
-function monitorQuery(cursor=null) {
-  const query=new URLSearchParams(Object.entries(monitorState.filters).filter(([,value])=>value!==''));
+function monitorQuery(cursor=null,filters=monitorState.filters) {
+  const query=new URLSearchParams(Object.entries(filters).filter(([,value])=>value!==''));
   if(cursor)query.set('cursor',cursor);
   return query.toString();
 }
-async function refreshMonitor(cursor=monitorState.cursor) {
-  if(!supervisor()||monitorState.loading)return;
+async function recheckMonitorSession(isCurrent) {
+  const session=await api('/api/session',undefined,{isCurrent});
+  if(!isCurrent())return;
+  if(session.user?.id===appState.user?.id&&session.user?.role==='head_nurse'){
+    appState.csrf=session.csrf;return;
+  }
+  await sessionView();
+}
+async function refreshMonitor(cursor=monitorState.cursor,{background=false}={}) {
+  if(!supervisor()||(background&&(monitorState.loading||monitorState.historyLoading||monitorState.error||monitorState.historyError||formChanged($('#monitor-filters')))))return;
+  monitorState.controller?.abort();monitorState.historyController?.abort();monitorState.sequence++;
+  const controller=new AbortController(),requestId=++monitorState.requestId;
+  monitorState.controller=controller;monitorState.error=false;monitorState.historyError=false;monitorState.historyLoading=false;
   monitorState.loading=true;monitorState.cursor=cursor;
-  const epoch=appState.epoch,selected=monitorState.current;
+  monitorState.next=null;$('#monitor-next').disabled=true;$('#monitor-first').disabled=true;
+  const epoch=appState.epoch,selected=monitorState.current,filters={...monitorState.filters};
+  const isCurrent=()=>epoch===appState.epoch&&requestId===monitorState.requestId&&supervisor();
   $('#monitor-result').textContent='正在載入授權範圍內的案件…';$('#monitor-rows').replaceChildren();$('#monitor-stats').replaceChildren();
   if(selected){$('#monitor-case').replaceChildren();$('#monitor-events').textContent='正在重新核對案件權限…';}
   $('#monitor-page').setAttribute('aria-busy','true');
   try {
-    const data=await api('/api/case-monitor?'+monitorQuery(cursor));
-    if(epoch!==appState.epoch||!supervisor())return;
+    let data,recovered=false;
+    try {data=await api('/api/case-monitor?'+monitorQuery(cursor,filters),undefined,{signal:controller.signal,isCurrent});}
+    catch(error) {
+      if(!isCurrent())return;
+      if(error.status!==409||!cursor)throw error;
+      monitorState.cursor=null;
+      data=await api('/api/case-monitor?'+monitorQuery(null,filters),undefined,{signal:controller.signal,isCurrent});
+      recovered=true;
+    }
+    if(!isCurrent())return;
     monitorState.next=data.next_cursor;
     const metrics=[['待接手',data.stats.pending_cases,'尚未有人接手'],['已接手',data.stats.claimed_cases,'按案件計算'],['交班待接受',data.stats.pending_handoffs,'包含於已接手，不重複加總'],['已結案',data.stats.closed_cases,'依目前篩選條件']];
     $('#monitor-stats').innerHTML=metrics.map(([label,n,note])=>`<div class="stat"><span>${label}</span><strong>${n}</strong><small>${note}</small></div>`).join('');
     $('#monitor-scope').textContent=`目前授權住民：${data.scope_resident_ids.join('、')||'無'} · 更新 ${monitorDate(data.updated_at)}`;
     $('#connection').textContent='最近同步 '+date(data.updated_at);
     $('#monitor-result').textContent=`符合篩選 ${data.stats.total_cases} 件，未結案 ${data.stats.open_cases} 件；本頁 ${data.cases.length} 件。${data.stats.stale_handoffs?`另有 ${data.stats.stale_handoffs} 件交班須重新確認。`:''}`;
-    const chosen=monitorState.filters.owner_id;
+    if(recovered)$('#monitor-result').textContent='案件資料已更新，已重新載入第一頁。'+$('#monitor-result').textContent;
+    const chosen=$('#monitor-owner').value;
     const choices=data.owners.some(o=>o.id===chosen)||!chosen||chosen==='__unassigned__'?data.owners:[...data.owners,{id:chosen,name:chosen}];
     $('#monitor-owner').innerHTML='<option value="">全部責任人</option><option value="__unassigned__">沒有責任 ID</option>'+choices.map(o=>`<option value="${esc(o.id)}">${esc(o.name||o.id)}（${esc(o.id)}）</option>`).join('');$('#monitor-owner').value=chosen;
     $('#monitor-rows').innerHTML=data.cases.length?data.cases.map(c=>`<tr><td><strong>案件 #${c.id} · ${esc(c.resident.label)}</strong><small>${esc(c.resident.bed_id||'未配置床位')} · ${esc(c.contact.name)}${c.contact.active?'':' · 配對停用'}</small></td><td>${esc(monitorStatus[c.status])}<small>訊息風險 ${esc(c.message_risk)}</small></td><td>${esc(monitorOwner(c))}<small>${esc(c.owner?.id||'')}${c.status==='claimed'&&c.owner&&!c.owner.valid?' · 權限待確認':''}</small></td><td>${esc(c.progress?.next_action||'尚未記錄下一步')}<small>${esc(c.progress?.waiting_for||'')}</small></td><td>${c.handoff?`${esc(c.handoff.to_name||c.handoff.to_user)}<small>${c.handoff.valid?'等待指定帳號接受':'內容或權限已變更，須重提'}</small>`:'—'}</td><td>${esc(monitorDate(c.created_at))}<small>期限：${c.due_at?'待機構確認':'未設定'}</small></td><td><button class="secondary" data-monitor-case="${c.id}">查看歷程</button></td></tr>`).join(''):'<tr><td colspan="7"><div class="empty">目前沒有符合條件的授權案件。</div></td></tr>';
     if(selected&&$('#monitor-dialog').open)await openMonitorCase(selected);
   } catch(error) {
-    if(epoch!==appState.epoch)return;
+    if(!isCurrent())return;
+    monitorState.error=true;monitorState.historyController?.abort();monitorState.sequence++;
     monitorState.next=null;
     if(error.status===409)monitorState.cursor=null;
     ['#monitor-stats','#monitor-rows','#monitor-case','#monitor-events','#monitor-scope'].forEach(s=>$(s).replaceChildren());
     $('#monitor-result').textContent='讀取失敗，監控資料已清除。'+error.message+' 請重新整理。';$('#connection').textContent='監控資料未同步';
     if($('#monitor-dialog').open)$('#monitor-events').textContent='未取得最新授權資料，請關閉後重新查詢。';
-    if(error.status===403)await sessionView();
+    if(error.status===403)await recheckMonitorSession(isCurrent);
   } finally {
-    if(epoch===appState.epoch){monitorState.loading=false;$('#monitor-page').setAttribute('aria-busy','false');$('#monitor-next').disabled=!monitorState.next;$('#monitor-first').disabled=!monitorState.cursor;}
+    if(isCurrent()){monitorState.loading=false;monitorState.controller=null;$('#monitor-page').setAttribute('aria-busy','false');$('#monitor-next').disabled=!monitorState.next;$('#monitor-first').disabled=!monitorState.cursor;}
   }
 }
 function monitorEvent(event) {
@@ -227,24 +256,48 @@ function monitorEvent(event) {
 }
 async function openMonitorCase(caseId,older=false) {
   if(!supervisor())return;
-  const epoch=appState.epoch,sequence=++monitorState.sequence;
+  monitorState.historyController?.abort();
+  monitorState.historyError=false;monitorState.historyLoading=true;
+  const controller=new AbortController();monitorState.historyController=controller;
+  const epoch=appState.epoch,sequence=++monitorState.sequence,requestId=monitorState.requestId;
+  const isCurrent=()=>epoch===appState.epoch&&sequence===monitorState.sequence&&requestId===monitorState.requestId&&supervisor();
   monitorState.current=caseId;
   if(!$('#monitor-dialog').open)$('#monitor-dialog').showModal();
   if(!older){$('#monitor-title').textContent='正在讀取案件';$('#monitor-case').replaceChildren();$('#monitor-events').textContent='正在核對權限並載入處理歷程…';}
   const params=new URLSearchParams({limit:'20'});if(older&&monitorState.historyNext)params.set('cursor',monitorState.historyNext);
   try {
-    const data=await api(`/api/case-monitor/${caseId}/timeline?${params}`);
-    if(epoch!==appState.epoch||sequence!==monitorState.sequence||!supervisor())return;
+    let data,recovered=false;
+    try {data=await api(`/api/case-monitor/${caseId}/timeline?${params}`,undefined,{signal:controller.signal,isCurrent});}
+    catch(error) {
+      if(!isCurrent())return;
+      if(error.status!==409||!params.has('cursor'))throw error;
+      params.delete('cursor');monitorState.historyNext=null;
+      $('#monitor-case').replaceChildren();$('#monitor-events').textContent='案件資料已更新，正在重新載入歷程第一頁…';
+      data=await api(`/api/case-monitor/${caseId}/timeline?${params}`,undefined,{signal:controller.signal,isCurrent});
+      older=false;recovered=true;
+    }
+    if(!isCurrent())return;
     const c=data.case;monitorState.historyNext=data.next_cursor;
     $('#monitor-title').textContent=`案件 #${c.id} · ${c.resident.label}`;
     $('#monitor-case').innerHTML=`<div class="info-block compact"><p>${esc(c.contact.name)} · ${esc(monitorStatus[c.status])}</p><p>責任人：${esc(monitorOwner(c))} ${esc(c.owner?.id||'')} · 期限：${c.due_at?'待機構確認':'未設定'}</p><p>已處理：${esc(c.progress?.summary||'尚未記錄')}</p><p>下一步：${esc(c.progress?.next_action||'尚未記錄')}</p>${c.close_note?`<p>結案結果：${esc(c.close_note)}</p>`:''}</div><p class="small muted">${esc(data.history_note)} · 讀取 ${esc(monitorDate(data.updated_at))}</p>`;
     const html=data.events.map(monitorEvent).join('');
     if(older)$('#monitor-events').insertAdjacentHTML('beforeend',html);else $('#monitor-events').innerHTML=html||'<p class="empty">尚無處理事件。</p>';
+    if(recovered)$('#monitor-events').insertAdjacentHTML('afterbegin','<p class="info-block">案件資料已更新，已重新載入第一頁</p>');
     $('#monitor-older').disabled=!data.next_cursor;
   } catch(error) {
-    if(epoch!==appState.epoch||sequence!==monitorState.sequence)return;
+    if(!isCurrent())return;
+    monitorState.historyError=true;
     $('#monitor-title').textContent='無法讀取案件';$('#monitor-case').replaceChildren();$('#monitor-events').textContent=error.message;$('#monitor-older').disabled=true;monitorState.historyNext=null;
-    if(error.status===403)await sessionView();
+    if(error.status===404){
+      // A newly observed scope loss must also invalidate an older list response.
+      monitorState.requestId++;monitorState.controller?.abort();monitorState.loading=false;monitorState.error=true;monitorState.next=null;
+      ['#monitor-stats','#monitor-rows','#monitor-scope'].forEach(s=>$(s).replaceChildren());
+      $('#monitor-result').textContent='案件已不存在或授權範圍已變更，請重新查詢。';
+      $('#monitor-page').setAttribute('aria-busy','false');$('#monitor-next').disabled=true;
+    }
+    if(error.status===403)await recheckMonitorSession(isCurrent);
+  } finally {
+    if(epoch===appState.epoch&&sequence===monitorState.sequence){monitorState.historyLoading=false;monitorState.historyController=null;}
   }
 }
 function selectTab(tab) {
@@ -351,9 +404,9 @@ $('#login-form').addEventListener('submit',event=>{event.preventDefault();perfor
   try {const result=await api('/api/login',{username:$('#username').value,password:$('#password').value});appState.csrf=result.csrf;$('#password').value='';await sessionView();}
   catch(error){$('#login-error').textContent=error.message;}
 },$('button[type="submit"]',event.currentTarget));});
-$('#logout').addEventListener('click',async()=>{if(await allowResidentExit())perform(async()=>{appState.epoch++;await api('/api/logout',{});await sessionView();},$('#logout'));});
-$$('[data-page]').forEach(el=>el.addEventListener('click',()=>perform(()=>showPage(el.dataset.page),el)));
-$('#refresh').addEventListener('click',()=>perform(async()=>{await showPage(appState.page);if($('#resident-dialog').open)await loadResident();},$('#refresh')));
+$('#logout').addEventListener('click',async()=>{if(await allowResidentExit())perform(async()=>{appState.epoch++;clearMonitor();await api('/api/logout',{});await sessionView();},$('#logout'));});
+$$('[data-page]').forEach(el=>el.addEventListener('click',()=>{if(supervisor())monitorRead(()=>showPage(el.dataset.page));else perform(()=>showPage(el.dataset.page),el);}));
+$('#refresh').addEventListener('click',()=>{if(supervisor()){monitorRead(()=>showPage(appState.page));return;}perform(async()=>{await showPage(appState.page);if($('#resident-dialog').open)await loadResident();},$('#refresh'));});
 $('#board-filter').addEventListener('change',renderBoard);
 $('#queue-filter').addEventListener('change',renderQueue);
 $('#work-queue').addEventListener('click',event=>{const el=event.target.closest('[data-work-resident]');if(el)perform(()=>openResident(el.dataset.workResident,assessor()?'handling':'messages',el.dataset.workConversation),el);});
@@ -411,17 +464,18 @@ $('#import-submit').addEventListener('click',()=>perform(async()=>{
 function changeAccess(event) {const el=event.target.closest('[data-access-user]');const contact=event.currentTarget.id==='line-contact-list';if(el)perform(async()=>{try{await api('/api/bindings',{user_id:el.dataset.accessUser,resident_id:el.dataset.accessResident,allowed:el.checked});toast(contact?'LINE 聯絡人配對已更新。':'人員工作範圍已更新。');}finally{await loadAccounts();}},el);}
 $('#account-list').addEventListener('change',changeAccess);
 $('#line-contact-list').addEventListener('change',changeAccess);
-$('#monitor-filters').addEventListener('submit',event=>{event.preventDefault();perform(async()=>{
+function monitorRead(fn) {Promise.resolve().then(fn).catch(error=>toast(error.message,true));}
+$('#monitor-filters').addEventListener('submit',event=>{event.preventDefault();
   const values=Object.fromEntries(new FormData(event.currentTarget));
   for(const key of ['from','to'])if(values[key])values[key]=new Date(values[key]+'+08:00').toISOString();
-  monitorState.filters=values;monitorState.cursor=null;await refreshMonitor(null);
-},$('button[type="submit"]',event.currentTarget));});
-$('#monitor-reset').addEventListener('click',()=>perform(async()=>{clearMonitor();await refreshMonitor(null);},$('#monitor-reset')));
-$('#monitor-first').addEventListener('click',()=>perform(()=>refreshMonitor(null),$('#monitor-first')));
-$('#monitor-next').addEventListener('click',()=>perform(()=>refreshMonitor(monitorState.next),$('#monitor-next')));
-$('#monitor-rows').addEventListener('click',event=>{const el=event.target.closest('[data-monitor-case]');if(el)perform(()=>openMonitorCase(Number(el.dataset.monitorCase)),el);});
+  monitorState.filters=values;monitorState.cursor=null;rememberForm(event.currentTarget);monitorRead(()=>refreshMonitor(null));
+});
+$('#monitor-reset').addEventListener('click',()=>{clearMonitor();monitorRead(()=>refreshMonitor(null));});
+$('#monitor-first').addEventListener('click',()=>monitorRead(()=>refreshMonitor(null)));
+$('#monitor-next').addEventListener('click',()=>{const cursor=monitorState.next;if(cursor)monitorRead(()=>refreshMonitor(cursor));});
+$('#monitor-rows').addEventListener('click',event=>{const el=event.target.closest('[data-monitor-case]');if(el)monitorRead(()=>openMonitorCase(Number(el.dataset.monitorCase)));});
 $('#monitor-close').addEventListener('click',()=>$('#monitor-dialog').close());
-$('#monitor-dialog').addEventListener('close',()=>{monitorState.sequence++;monitorState.current=null;monitorState.historyNext=null;$('#monitor-title').textContent='';$('#monitor-case').replaceChildren();$('#monitor-events').replaceChildren();});
-$('#monitor-older').addEventListener('click',()=>perform(()=>openMonitorCase(monitorState.current,true),$('#monitor-older')));
-setInterval(()=>{if(appState.user&&!document.hidden&&!appState.busy){if(supervisor()&&appState.page==='monitor'&&!$('#monitor-filters').contains(document.activeElement))refreshMonitor().catch(()=>{});else if(staff()&&appState.page==='board')refreshBoard().catch(()=>{});}},15000);
+$('#monitor-dialog').addEventListener('close',()=>{monitorState.sequence++;monitorState.historyController?.abort();monitorState.historyLoading=false;monitorState.historyError=false;monitorState.current=null;monitorState.historyNext=null;$('#monitor-title').textContent='';$('#monitor-case').replaceChildren();$('#monitor-events').replaceChildren();});
+$('#monitor-older').addEventListener('click',()=>{if(monitorState.historyNext)monitorRead(()=>openMonitorCase(monitorState.current,true));});
+setInterval(()=>{if(appState.user&&!document.hidden&&!appState.busy){if(supervisor()&&appState.page==='monitor'&&!$('#monitor-filters').contains(document.activeElement))refreshMonitor(monitorState.cursor,{background:true}).catch(()=>{});else if(staff()&&appState.page==='board')refreshBoard().catch(()=>{});}},15000);
 sessionView().catch(error=>{$('#login-error').textContent=error.message;});

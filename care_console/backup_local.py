@@ -1,14 +1,11 @@
 """Offline database backup for the OS data-directory custodian, outside portal roles."""
-from contextlib import closing
 from pathlib import Path
 import argparse
 import json
 import os
-import secrets
-import sqlite3
-import tempfile
 import zipfile
 from care_store import stamp
+from snapshots import staging, copy_sources, manifest, failed
 
 
 def create_snapshot(directory):
@@ -20,22 +17,32 @@ def create_snapshot(directory):
     sources = [('facility.sqlite3',directory/'facility.sqlite3'),('core.sqlite3',directory/'core/research.sqlite3')]
     if not all(source.is_file() for _,source in sources):
         raise ValueError('既有資料庫不完整；不建立或重灌資料。')
-    destination = directory / 'backups'
-    destination.mkdir(exist_ok=True)
-    path = destination / ('care-demo-'+stamp().replace(':','').replace('+','_')+'-'+secrets.token_hex(4)+'.zip')
-    with tempfile.TemporaryDirectory(dir=destination) as temporary:
-        copies = []
-        for name,source in sources:
-            target = Path(temporary)/name
-            with closing(sqlite3.connect(source)) as src,closing(sqlite3.connect(target)) as dst:
-                src.backup(dst)
-            copies.append((name,target))
-        with zipfile.ZipFile(path,'w',zipfile.ZIP_DEFLATED) as archive:
-            for name,target in copies:
-                archive.write(target,name)
-            archive.write(marker,'environment.json')
-            archive.write(directory/'core/integration-environment.json','core-environment.json')
-            archive.writestr('manifest.json',json.dumps({'mode':'synthetic_local_demo','created_at':stamp(),'method':'offline_local_maintenance'}))
+    temporary,target=staging(directory,'care-demo-'+stamp().replace(':','').replace('+','_'))
+    path=target.with_suffix('.zip')
+    try:
+        files=copy_sources(directory,temporary,core_marker_name='core-environment.json',require_core=True)
+        metadata=manifest('offline_local_maintenance',files)
+        metadata['method']='offline_local_maintenance'
+        archive_path=temporary/'snapshot.partial'
+        with zipfile.ZipFile(archive_path,'w',zipfile.ZIP_DEFLATED) as archive:
+            for name in files:
+                archive.write(temporary/name,name)
+            archive.writestr('manifest.json',json.dumps(metadata,ensure_ascii=False,indent=2))
+        with zipfile.ZipFile(archive_path) as archive:
+            if archive.testzip() is not None:
+                raise ValueError('備份壓縮檔驗證失敗。')
+        archive_path.rename(path)
+    except Exception as error:
+        failed(temporary,error)
+        raise
+    # Only this call's transient copies are removed after a valid archive is published.
+    # If cleanup fails, preserve the leftovers and still return the completed archive.
+    try:
+        for name in files:
+            (temporary/name).unlink()
+        temporary.rmdir()
+    except OSError:
+        pass
     return path
 
 

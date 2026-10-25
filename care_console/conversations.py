@@ -7,6 +7,7 @@ import sqlite3
 
 from care_store import ASSESSORS, stamp
 from live import LiveService
+from snapshots import upgrade_snapshot
 
 
 def internal_conversation(rid):
@@ -22,20 +23,7 @@ def backup_before_thread_schema(directory):
     with closing(sqlite3.connect(facility)) as db:
         if db.execute("SELECT 1 FROM sqlite_master WHERE name='contact_conversations'").fetchone():
             return
-    target = directory / 'backups' / ('before-contact-conversations-' + secrets.token_hex(8))
-    target.mkdir(parents=True)
-    for name, source in [('facility.sqlite3', facility), ('core.sqlite3', directory / 'core/research.sqlite3')]:
-        if source.exists():
-            with closing(sqlite3.connect(source)) as src, closing(sqlite3.connect(target / name)) as dst:
-                src.backup(dst)
-    for name in ('environment.json', 'core/integration-environment.json'):
-        source = directory / name
-        if source.exists():
-            (target / source.name).write_bytes(source.read_bytes())
-    (target / 'manifest.json').write_text(json.dumps({
-        'created_at': stamp(), 'purpose': 'before_contact_conversations',
-        'credentials_included': False,
-    }), encoding='utf-8')
+    return upgrade_snapshot(directory,'before-contact-conversations','before_contact_conversations')
 
 
 class ConversationDirectory:

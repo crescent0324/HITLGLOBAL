@@ -83,10 +83,14 @@ python -m venv .venv
 測試指令：
 
 ```powershell
-.\.venv\Scripts\python.exe -B -m unittest -v test_care_console test_case_monitor
+.\.venv\Scripts\python.exe -B -m unittest -v test_care_console test_case_monitor test_backup_hardening test_monitor_hardening
+npm install
+npm test
 ```
 
 測試使用暫存資料庫與明確的離線替代服務，阻擋外部網路連線，未消耗 API 額度。
+
+前端測試需 Node.js 20 以上，開發依賴僅用於 JSDOM 測試，瀏覽器介面仍使用原生 JavaScript。本輪競態、分頁回復、索引與備份修正及實測證據見 [穩定性驗證](../docs/monitor/HARDENING.md)、[效能報告](../docs/monitor/PERFORMANCE.md)。未來責任升級與代理流程見 [設計草案](../docs/monitor/NEXT_PHASE.md)，尚未新增操作權限。
 
 ## 已完成與尚未完成
 

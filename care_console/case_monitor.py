@@ -25,6 +25,35 @@ class CaseMonitor:
         return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
     @staticmethod
+    def fingerprint(rows):
+        # Exactly the original JSON list hash, streamed one row at a time. Keeping all
+        # scoped fields avoids weakening cursor invalidation to MAX(time)/COUNT alone.
+        digest=hashlib.sha256();digest.update(b'[')
+        for index,row in enumerate(rows):
+            if index:
+                digest.update(b', ')
+            digest.update(json.dumps(dict(row),sort_keys=True,ensure_ascii=False).encode())
+        digest.update(b']')
+        return digest.hexdigest()
+
+    @staticmethod
+    def statistics(db, query, values):
+        query=query.removesuffix(' ORDER BY c.id DESC')
+        valid="""handoff_id IS NOT NULL AND status='claimed' AND owner_role='nurse'
+            AND owner_access=1 AND operator_id=from_user AND target_role='nurse'
+            AND target_access=1 AND handoff_message=latest_message"""
+        row=db.execute('''SELECT COUNT(*) AS total_cases,
+            COALESCE(SUM(status IN ('pending','claimed')),0) AS open_cases,
+            COALESCE(SUM(status='pending'),0) AS pending_cases,
+            COALESCE(SUM(status='claimed'),0) AS claimed_cases,
+            COALESCE(SUM(status='closed'),0) AS closed_cases,
+            COALESCE(SUM(CASE WHEN '''+valid+''' THEN 1 ELSE 0 END),0) AS pending_handoffs,
+            COALESCE(SUM(handoff_id IS NOT NULL AND NOT COALESCE(('''+valid+'''),0)),0) AS stale_handoffs,
+            COALESCE(SUM(due_at IS NULL),0) AS deadline_unset
+            FROM ('''+query+')',values).fetchone()
+        return dict(row)|{'overdue_cases':None}
+
+    @staticmethod
     def parameters(args, timeline=False):
         allowed = {'cursor','limit'} if timeline else {'status','owner_id','from','to','cursor','limit'}
         if set(args) - allowed or any(len(args.getlist(k)) != 1 for k in args):
@@ -155,12 +184,13 @@ class CaseMonitor:
     def list(self, user, args):
         filters = self.parameters(args)
         with self.workflow.transaction() as db:
+            db.execute('BEGIN')
             scope = self.scope(db, user)
             query, values = self.query(user, filters)
-            rows = [dict(r) for r in db.execute(query, values)]
+            revision = self.fingerprint(db.execute(query, values))
             # Fingerprints contain scoped metadata only; no family message text is loaded.
             context = {'kind':'list','uid':user['id'],'scope':self.digest(scope),
-                       'filters':filters,'revision':self.digest(rows)}
+                       'filters':filters,'revision':revision}
             after = self.cursor(args.get('cursor'), context)
             page_values = list(values)
             page_query = 'SELECT * FROM ('+query+') WHERE 1=1'
@@ -170,18 +200,13 @@ class CaseMonitor:
             page_query += ' ORDER BY id DESC LIMIT ?'
             page_values.append(filters['limit']+1)
             page = [dict(r) for r in db.execute(page_query,page_values)]
-        items = [self.item(r) for r in rows]
-        pending = sum(i['status']=='pending' for i in items)
-        claimed = sum(i['status']=='claimed' for i in items)
-        stats = {'total_cases':len(items),'open_cases':pending+claimed,'pending_cases':pending,
-                 'claimed_cases':claimed,'closed_cases':sum(i['status']=='closed' for i in items),
-                 'pending_handoffs':sum(bool(i['handoff'] and i['handoff']['valid']) for i in items),
-                 'stale_handoffs':sum(bool(i['handoff'] and not i['handoff']['valid']) for i in items),
-                 'deadline_unset':sum(i['due_at'] is None for i in items),'overdue_cases':None}
-        owners = {i['owner']['id']:i['owner']['name'] for i in items if i['owner']}
+            stats = self.statistics(db,query,values)
+            owners = [dict(r) for r in db.execute('''SELECT operator_id AS id,owner_name AS name
+                FROM ('''+query.removesuffix(' ORDER BY c.id DESC')+''')
+                WHERE operator_id IS NOT NULL GROUP BY operator_id,owner_name ORDER BY operator_id''',values)]
         next_cursor = self.tokens.dumps(context | {'after':page[filters['limit']-1]['id']}) if len(page)>filters['limit'] else None
         return {'cases':[self.item(r) for r in page[:filters['limit']]],'stats':stats,'filters':filters,
-                'owners':[{'id':uid,'name':name} for uid,name in sorted(owners.items())],
+                'owners':owners,
                 'scope_resident_ids':scope,'next_cursor':next_cursor,'updated_at':stamp(),
                 'statistics_note':'交班待接受包含於已接手案件，不與已接手數相加。',
                 'deadline_note':'機構時限未確認；未設定期限不判定逾期。'}
@@ -189,6 +214,7 @@ class CaseMonitor:
     def timeline(self, user, case_id, args):
         filters = self.parameters(args, timeline=True)
         with self.workflow.transaction() as db:
+            db.execute('BEGIN')
             scope = self.scope(db,user)
             query, values = self.query(user,case_id=case_id)
             row = db.execute(query,values).fetchone()

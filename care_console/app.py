@@ -16,7 +16,8 @@ sys.path.insert(0, str(BASE / 'core'))
 from integration import OfflineLineTransport
 from care_store import CareStore, ROLES, STAFF, CLINICAL_STAFF, ASSESSORS, CSV_FIELDS, stamp
 from workflow import StaffWorkflow
-from migrations import backup_before_owner_migration, backup_before_monitor_upgrade, migrate_monitor_access
+from migrations import (backup_before_owner_migration, backup_before_monitor_upgrade, migrate_monitor_access,
+                        backup_before_monitor_indexes, migrate_monitor_indexes)
 from case_monitor import CaseMonitor
 from conversations import ConversationDirectory, ScopedLiveService, internal_conversation, backup_before_thread_schema
 from werkzeug.exceptions import Conflict
@@ -42,11 +43,13 @@ def create_app(data_dir=None, provider=None):
     backup_before_thread_schema(directory)
     backup_before_owner_migration(directory)
     backup_before_monitor_upgrade(directory)
+    backup_before_monitor_indexes(directory)
     store = CareStore(directory)
     conversations = ConversationDirectory(store)
     service = ScopedLiveService(directory / 'core', conversations, transport=OfflineLineTransport(), provider=provider)
     workflow = StaffWorkflow(store, service)
     migrate_monitor_access(workflow)
+    migrate_monitor_indexes(workflow)
     monitor = CaseMonitor(workflow, key_path.read_text(encoding='utf-8'))
     for resident in store.residents(store.user('nurse')):
         for thread in conversations.list(store.user('nurse'), resident['id']):

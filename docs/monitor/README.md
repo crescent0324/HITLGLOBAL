@@ -2,6 +2,8 @@
 
 2026-10-25，本機虛構資料版本。基準為已合併 PR #2 的 main `e7f319973806c89fc49eb3be0e1c59dc4cbf6034`。本輪沿用原有接手、進度、指定接受交班、回覆及結案，新增護理長唯讀監控及 IT 職責隔離。原論文程式與實驗結果沒有修改。
 
+後續穩定性修正以已合併 PR #3 的 main `2d23e85ad76bfe87644f8e5926f6b3ccbfacfbae` 為基準，見 [修正與驗證](HARDENING.md)、[100／1,000／10,000 件實測](PERFORMANCE.md)及[未實作的責任升級規格](NEXT_PHASE.md)。下列原角色能力繼續適用。
+
 ## 已完成的行為
 
 | 角色／體驗帳號 | 預設範圍 | 本輪行為 |
@@ -40,7 +42,9 @@
 在 `care_console/` 使用既有 requirements：
 
 ```powershell
-python -B -m unittest -v test_care_console test_case_monitor
+python -B -m unittest -v test_care_console test_case_monitor test_backup_hardening test_monitor_hardening
+npm install
+npm test
 python -B demo_monitor.py --output monitor-demo.json
 ```
 
