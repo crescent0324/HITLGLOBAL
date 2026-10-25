@@ -1,0 +1,21 @@
+.monitor-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 18px;padding:18px 22px}
+.monitor-filters label{margin:4px 0;font-size:12px}
+.monitor-filter-actions{display:flex;gap:9px;align-items:end;padding-bottom:4px}
+.monitor-filter-actions button{white-space:nowrap;font-size:12px}
+#monitor-result{font-size:12px;color:var(--muted);min-height:22px}
+.monitor-table-wrap{overflow:auto;background:white;border:1px solid var(--line);border-radius:12px}
+.monitor-table{width:100%;min-width:850px;border-collapse:collapse;text-align:left;font-size:12px;line-height:1.7}
+.monitor-table caption{text-align:left;padding:13px 16px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--line)}
+.monitor-table th{background:#edf5f2;color:#49635d;font-size:11px;padding:12px 14px;white-space:nowrap}
+.monitor-table td{padding:16px 14px;vertical-align:top;border-top:1px solid var(--line);max-width:220px;overflow-wrap:anywhere}
+.monitor-table td:first-child{min-width:170px}
+.monitor-table small{display:block;color:var(--muted);font-size:10px;line-height:1.8;margin-top:4px}
+.monitor-table strong{font-size:12px}.monitor-table button{font-size:11px;white-space:nowrap;padding:7px 9px}
+.monitor-pagination{display:flex;justify-content:flex-end;gap:10px;margin:18px 0}
+.monitor-history{padding:0 26px 26px}.monitor-history h3{font-size:15px;margin-top:24px}
+.monitor-event{padding:15px 0;border-bottom:1px solid var(--line);font-size:12px}
+.monitor-event header{display:flex;gap:14px;justify-content:space-between}.monitor-event time{font-size:11px;white-space:nowrap;color:var(--muted)}
+.monitor-event small{color:var(--muted);font-size:10px}.monitor-event p{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}
+#monitor-case p{white-space:pre-wrap;overflow-wrap:anywhere}#monitor-older{margin-top:18px}
+@media(max-width:1000px){.monitor-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.monitor-filters{grid-template-columns:1fr}.monitor-filter-actions{padding-top:10px}.monitor-history{padding:0 18px 20px}.monitor-event header{display:block}}

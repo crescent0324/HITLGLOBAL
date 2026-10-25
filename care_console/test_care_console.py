@@ -14,6 +14,7 @@ from contextlib import closing
 from app import create_app, conversation
 from care_store import CSV_FIELDS, stamp
 from integration import OfflineProvider
+from backup_local import create_snapshot
 
 class CareConsoleTests(unittest.TestCase):
     def setUp(self):
@@ -322,12 +323,14 @@ class CareConsoleTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/board').status_code,401)
 
     def test_roles_have_distinct_resident_scopes(self):
-        for role, count in [('admin',6),('nurse',6),('caregiver',2)]:
+        for role, count in [('nurse',6),('caregiver',2)]:
             self.login(role)
             body=self.client.get('/api/board').get_json()
             self.assertEqual(len(body['cards']),count)
             self.assertFalse(body['ai_enabled'])
             self.assertEqual(body['line_link']['user_id'],role)
+        self.login('admin')
+        self.assertEqual(self.client.get('/api/board').status_code,403)
 
     def test_family_and_resident_cannot_log_in_to_web(self):
         for role in ['family','resident']:
@@ -335,7 +338,7 @@ class CareConsoleTests(unittest.TestCase):
             self.assertEqual(self.client.get('/api/board').status_code,401)
             self.assertEqual(self.client.get('/api/residents/R001').status_code,401)
             self.assertEqual(self.post('/api/residents/R001/message',dict(text='測試')).status_code,401)
-        self.assertEqual(set(self.client.get('/api/session').get_json()['roles']),{'admin','nurse','caregiver'})
+        self.assertEqual(set(self.client.get('/api/session').get_json()['roles']),{'admin','head_nurse','nurse','caregiver'})
 
     def test_caregiver_observation_cannot_set_assessment(self):
         self.login('caregiver')
@@ -443,16 +446,17 @@ class CareConsoleTests(unittest.TestCase):
         self.assertFalse(any(m['text']=='虛構：撤銷後不應寫入' for m in self.detail()['messages']))
 
     def test_backup_restores_into_new_directory_without_secrets(self):
-        self.login('admin');self.send('轉人工')
-        response=self.post('/api/backup',{})
-        self.assertEqual(response.status_code,200)
+        self.login('nurse');self.send('轉人工')
+        # Full databases are no longer downloadable through a portal role.
+        self.login('admin');self.assertEqual(self.post('/api/backup',{}).status_code,403)
+        with self.service.lock:
+            snapshot=create_snapshot(self.directory)
         dest=Path(self.tmp.name)/'restored';dest.mkdir()
-        with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        with zipfile.ZipFile(snapshot) as archive:
             self.assertEqual(set(archive.namelist()),{'facility.sqlite3','core.sqlite3','manifest.json','environment.json','core-environment.json'})
             archive.extract('facility.sqlite3',dest);archive.extract('environment.json',dest)
             (dest/'core').mkdir();(dest/'core/research.sqlite3').write_bytes(archive.read('core.sqlite3'))
             (dest/'core/integration-environment.json').write_bytes(archive.read('core-environment.json'))
-        response.close()
         for filename in ['facility.sqlite3','core/research.sqlite3']:
             with closing(sqlite3.connect(dest/filename)) as db:self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
         restored=create_app(dest,provider=OfflineProvider())
@@ -743,9 +747,10 @@ class CareConsoleTests(unittest.TestCase):
         self.assertEqual(self.post('/api/residents/R001/case/resolve',{'note':'配對已撤銷，結案保留紀錄'}).status_code,200)
 
     def test_contact_revoke_during_generation_cancels_old_result(self):
-        self.login('admin')
+        self.login('nurse')
         self.service.save_ai_settings({'ai_enabled':True,'daily_call_limit':200})
         self.line_send('想了解喘息服務')
+        self.login('admin')
         thread=self.selected_threads['R001']
         self.assertTrue(self.service.detail(thread)['generations'])
         original=self.provider.generate

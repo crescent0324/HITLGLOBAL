@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>照護協作台｜本機體驗環境</title>
-  <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/workflow.css"><script src="/static/app.js" defer></script>
+  <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/workflow.css"><link rel="stylesheet" href="/static/monitor.css"><script src="/static/app.js" defer></script>
 </head>
 <body>
   <div id="notice" class="toast" role="status" hidden></div>
@@ -14,7 +14,7 @@
     </div>
     <form id="login-form" class="login-card"><p class="eyebrow">STAFF ACCESS</p><h2>院內人員登入</h2>
       <p class="muted">護理師、照服員與管理者依權限登入。</p>
-      <label>院內帳號<select id="username" name="username"><option value="nurse">護理師</option><option value="nurse2">接班護理師</option><option value="admin">管理者（護理長／IT）</option><option value="caregiver">照服員</option></select></label>
+      <label>院內帳號<select id="username" name="username"><option value="nurse">護理師</option><option value="nurse2">接班護理師</option><option value="head_nurse">護理長</option><option value="admin">IT 管理人員</option><option value="caregiver">照服員</option></select></label>
       <label>密碼<input id="password" name="password" type="password" autocomplete="current-password" required></label>
       <p class="login-hint">本機體驗共用密碼：<code>CareDemo2026!</code></p>
       <button class="primary" type="submit">登入協作台 <span aria-hidden="true">→</span></button>
@@ -25,7 +25,7 @@
   <div id="app-view" class="app-shell" hidden>
     <aside class="sidebar"><a class="brand" href="#board"><span class="brand-mark">H</span><span>照護協作台<small>本機體驗環境</small></span></a>
       <p class="nav-label">工作空間</p>
-      <nav aria-label="主要導覽"><button data-page="board" class="nav-item active">▦ <span>照護工作台</span></button><button data-page="knowledge" class="nav-item">▤ <span>服務資訊</span></button><button data-page="import" class="nav-item assessor-only">⇥ <span>資料匯入</span></button><button data-page="accounts" class="nav-item admin-only">◎ <span>人員與授權</span></button></nav>
+      <nav aria-label="主要導覽"><button data-page="board" class="nav-item clinical-only active">▦ <span>照護工作台</span></button><button data-page="monitor" class="nav-item monitor-only">▥ <span>案件監控</span></button><button data-page="knowledge" class="nav-item">▤ <span>服務資訊</span></button><button data-page="import" class="nav-item assessor-only">⇥ <span>資料匯入</span></button><button data-page="accounts" class="nav-item admin-only">◎ <span>人員與授權</span></button></nav>
       <div class="sidebar-note"><span class="status-dot"></span>模擬院內資料<p>顯示最近一筆回報及其時間。<br>尚未串接即時監測設備。</p></div>
       <div class="profile"><span id="user-avatar" class="avatar">護</span><div><strong id="user-name"></strong><small id="user-role"></small></div><button id="logout" class="icon-button" title="登出" aria-label="登出">↗</button></div>
     </aside>
@@ -37,13 +37,29 @@
         <section id="work-section" class="staff-only"><div id="message-work-section" class="assessor-only"><div class="section-line"><div><h2>訊息待辦</h2><p class="small muted">依訊息風險、接手狀態與建立時間排序。</p></div><label class="filter-label">篩選<select id="queue-filter"><option value="all">全部未結案</option><option value="pending">尚未接手</option><option value="mine">由我處理</option><option value="handoff">交班給我</option></select></label></div><div id="work-queue"></div></div>
         <div id="followup-section"><div class="section-line"><div><h2>照護回報需確認</h2><p class="small muted">依最近已評估紀錄列出；新的未評估回報不會解除追蹤提示。</p></div></div><div id="care-followups"></div></div></section>
         <div class="section-line"><h2>照護住民</h2><label class="filter-label">顯示<select id="board-filter"><option value="all">全部住民</option><option value="pending">有待處理訊息</option><option value="missing">沒有量測回報</option></select></label></div><div id="resident-cards" class="resident-grid"></div><p class="small muted">量測顯示最近回報；照護評估另列最近已評估紀錄及其時間。紀錄不代表當下健康狀況，訊息處理狀態表示回覆權限。</p></section>
+      <section id="monitor-page" class="page" hidden aria-busy="false">
+        <div id="monitor-stats" class="stats"></div>
+        <div class="info-block compact"><p>交班待接受包含於已接手案件，兩者不重複加總。機構時限尚未確認，未設定期限不判定逾期；此頁沒有通知或自動改派。</p><p id="monitor-scope" class="small"></p></div>
+        <form id="monitor-filters" class="panel monitor-filters">
+          <label>案件狀態<select id="monitor-status" name="status"><option value="open">全部未結案</option><option value="pending">待接手</option><option value="claimed">已接手</option><option value="closed">已結案</option><option value="all">全部狀態</option></select></label>
+          <label>案件責任人<select id="monitor-owner" name="owner_id"><option value="">全部責任人</option><option value="__unassigned__">沒有責任 ID</option></select></label>
+          <label>建立時間起（台灣）<input id="monitor-from" type="datetime-local" name="from"></label>
+          <label>建立時間迄（台灣）<input id="monitor-to" type="datetime-local" name="to"></label>
+          <label>每頁案件<select id="monitor-limit" name="limit"><option value="10">10 件</option><option value="20">20 件</option><option value="50">50 件</option></select></label>
+          <div class="monitor-filter-actions"><button type="submit" class="primary">套用篩選</button><button type="button" id="monitor-reset" class="secondary">清除篩選</button></div>
+        </form>
+        <p id="monitor-result" role="status" aria-live="polite"></p>
+        <div class="monitor-table-wrap"><table class="monitor-table"><caption>授權範圍內的案件，按案件編號由新到舊排列</caption><thead><tr><th>案件／住民／聯絡人</th><th>狀態</th><th>目前責任</th><th>下一步／待確認</th><th>交班</th><th>建立時間／期限</th><th>查閱</th></tr></thead><tbody id="monitor-rows"></tbody></table></div>
+        <div class="monitor-pagination"><button type="button" id="monitor-first" class="secondary" disabled>回第一頁</button><button type="button" id="monitor-next" class="secondary" disabled>下一頁 →</button></div>
+      </section>
       <section id="knowledge-page" class="page" hidden><div class="info-block"><h2>服務資料來源</h2><p>本體驗版沿用研究原型中整理的官方資料摘要，適合測試資訊查詢與人工轉接。查核日期列於各筆資料；最新資格及安排仍須由承辦單位確認。</p><p>機構服務、探視、費用與預約規則：尚未提供。</p></div><div id="knowledge-list" class="knowledge-grid"></div></section>
       <section id="import-page" class="page" hidden><div class="panel import-panel"><h2>匯入院內測試紀錄</h2><p class="muted">先以 CSV 驗證欄位與來源紀錄。每次最多 500 筆；有錯誤時整批不寫入，相同識別碼與相同內容會略過。</p><a class="button secondary" href="/api/template.csv" download>下載 CSV 範本 ↓</a>
         <label>選擇 UTF-8 CSV<input id="csv-file" type="file" accept=".csv,text/csv"></label><label>CSV 內容<textarea id="csv-text" rows="8" placeholder="下載範本後填入虛構測試資料，或直接貼上 CSV。"></textarea></label><label class="check"><input id="synthetic-confirmed" type="checkbox">我確認內容均為虛構資料，未含真實住民或院內紀錄。</label><button id="import-submit" class="primary">檢查並匯入</button><p id="import-result" role="status"></p>
         <details><summary>欄位說明</summary><p>resident_code：住民代碼 R001–R006；source_record_id：唯一來源識別碼；observed_at：回報時間，需含時區，例如 2026-10-03T22:00:00+08:00。量測欄位依序為體溫（°C）、脈搏（次／分）、血氧（%）、收縮壓與舒張壓（mmHg）；未知請留白。</p><p>care_status 可填「尚未評估」、「一般照護」、「需追蹤」、「需優先確認」。本欄位不由系統推論。更正資料時使用新的 source_record_id，保留原紀錄。</p></details></div></section>
-      <section id="accounts-page" class="page" hidden><div class="info-block"><h2>院內人員與工作權限</h2><p>管理者供護理長與 IT 管理使用。本機體驗版暫以同一管理角色提供功能；正式部署前，需分開設定照護管理與系統維運權限。</p></div><div id="account-list"></div><section class="contact-section"><div class="section-line"><div><h2>LINE 聯絡人配對</h2><p class="small muted">外部聯絡人不具網頁登入權限。</p></div></div><p class="small muted">配對以住民代碼保存，轉床後仍對應同一住民。目前只有模擬 LINE 識別碼，尚未完成真實身分確認。</p><div id="line-contact-list"></div></section><div class="panel backup-panel"><h2>資料備份</h2><p>下載院內資料與對話紀錄的 SQLite 快照。備份不含 API 金鑰與登入工作階段金鑰。</p><button id="backup" class="secondary">下載本機資料備份 ↓</button></div></section>
+      <section id="accounts-page" class="page" hidden><div class="info-block"><h2>院內人員與工作權限</h2><p>IT 管理工作範圍與模擬聯絡人配對，不取得照護紀錄、家屬對話或案件內容。護理長以獨立身分查閱獲授權的案件，沒有代回覆或改派權限。</p></div><div id="account-list"></div><section class="contact-section"><div class="section-line"><div><h2>LINE 聯絡人配對</h2><p class="small muted">外部聯絡人不具網頁登入權限。</p></div></div><p class="small muted">配對以住民代碼保存，轉床後仍對應同一住民。目前只有模擬 LINE 識別碼，尚未完成真實身分確認。</p><div id="line-contact-list"></div></section><div class="panel backup-panel"><h2>資料備份</h2><p>完整資料庫含臨床內容，已停止網頁下載。須由具本機資料目錄權限的維護人員停止服務後，使用 backup_local.py 備份；不因 IT 網頁身分取得內容。</p><button id="backup" class="secondary" disabled>完整備份僅供離線本機維護</button></div></section>
     </main>
   </div>
+  <dialog id="monitor-dialog" aria-labelledby="monitor-title"><div class="dialog-header"><div><p class="eyebrow">案件歷程 · 唯讀</p><h2 id="monitor-title"></h2></div><button type="button" id="monitor-close" class="icon-button" aria-label="關閉案件歷程">×</button></div><div class="monitor-history"><div id="monitor-case"></div><h3>處理事件（由新到舊）</h3><div id="monitor-events"></div><button type="button" id="monitor-older" class="secondary" disabled>更多較早紀錄</button></div></dialog>
   <dialog id="resident-dialog"><div class="dialog-header"><div><p id="resident-code" class="eyebrow"></p><h2 id="resident-title"></h2></div><div class="dialog-controls"><button id="refresh-detail" class="secondary">更新紀錄 ↻</button><button id="close-dialog" class="icon-button" aria-label="關閉住民視窗">×</button></div></div>
     <p id="detail-synced" class="small muted detail-synced"></p><div class="dialog-tabs" role="tablist"><button class="active" data-tab="records" role="tab">照護紀錄</button><button data-tab="messages" class="assessor-only" role="tab">服務對話</button><button data-tab="handling" class="assessor-only" role="tab">人工處理</button></div>
     <div class="conversation-picker assessor-only"><label for="conversation-select">服務對話與回覆對象</label><select id="conversation-select"></select><p id="conversation-recipient" class="small muted" aria-live="polite"></p></div>

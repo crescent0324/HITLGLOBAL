@@ -100,7 +100,7 @@ class ConversationDirectory:
     def delivery_allowed(self, thread_id):
         if thread_id.startswith('demo-care-'):
             rid = thread_id[len('demo-care-'):]
-            return self.store.allowed(self.store.user('admin'), rid)
+            return self.store.resident_active(rid)
         with self.store.db() as db:
             row = db.execute('SELECT resident_id,contact_id FROM contact_conversations WHERE id=?', (thread_id,)).fetchone()
         if not row:

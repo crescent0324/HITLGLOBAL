@@ -24,14 +24,15 @@ python -m venv .venv
 
 | 帳號 | 身分 | 預設查看範圍 | 可操作內容 |
 |---|---|---|---|
-| admin | 管理者（護理長／IT） | 6 位住民 | 本機暫為合併管理角色：看板、回報、人工處理、轉床、匯入、授權、備份 |
+| admin | IT 管理人員 | 無臨床住民存取 | 管理人員範圍與模擬聯絡人配對；不讀照護、對話或案件，不能下載完整資料庫 |
+| head_nurse | 護理長 | R001、R002，可撤銷 | 唯讀案件監控、責任／時間篩選、分頁、進度與交班歷程；不能代回覆或改派 |
 | nurse | 護理師 | 6 位住民 | 看板、回報、人工接手與回覆、結案、轉床、匯入 |
 | nurse2 | 接班護理師 | 6 位住民 | 與 nurse 相同；獨立帳號供交班體驗 |
 | caregiver | 照服員 | R001、R002 | 查看照護紀錄、記錄觀察及一般服務資料；不取得家屬對話、案件或稽核；回報狀態固定為尚未評估 |
 
 家屬與住民的預定使用入口為 LINE。資料庫的 `family`、`resident` 只保留作為模擬 LINE 聯絡身分，目前均配對 R001，無法登入網頁或呼叫操作台 API；以前建立的工作階段也會被拒絕。本版尚未完成真實 LINE 配對或手機收發。
 
-護理長的照護管理與 IT 的系統維運，正式部署前需分開設定權限；目前仍是一個合併管理角色，尚未完成二者的權限隔離。管理頁已分開「院內人員」及「LINE 聯絡人配對」，外部聯絡人不列在網頁人員帳號清單。
+2026-10-25 已在本機分開 head_nurse 與 IT admin。所有臨床角色依明確住民範圍驗權，護理師原有六位範圍也可撤銷；護理長僅有監控讀取。正式員工生命週期及院方授權核准仍待確認。詳見 [監控工作台](../docs/monitor/README.md)。管理頁已分開「院內人員」及「LINE 聯絡人配對」，外部聯絡人不列在網頁人員帳號清單。
 
 以上共用密碼僅供 localhost 體驗。本版拒絕遠端 IP 與外部 Host，不適合直接放上雲端或用 tunnel 公開。
 
@@ -77,19 +78,19 @@ python -m venv .venv
 
 首次以本版開啟既有本機環境時，先備份兩個資料庫與環境識別檔至 `runtime/backups/before-contact-conversations-…/`，再新增對話映射資料表。升級前須停止舊程序，勿讓兩個版本同時操作相同資料目錄；詳見 [對話隔離說明](../docs/CONTACT_CONVERSATIONS.md)。
 
-「備份」下載兩個 SQLite 快照、manifest 與環境識別檔，未含 API 設定及 session.key。還原請使用全新的目錄：facility.sqlite3 放根目錄、core.sqlite3 放在 core/research.sqlite3、environment.json 放根目錄、core-environment.json 放在 core/integration-environment.json；不要直接覆蓋正在執行的資料庫。由測試程式驗證快照可以在新目錄重新載入。
+完整備份含所有住民及對話，網頁角色均不能下載。由具 OS 資料目錄權限的維護人員先停止服務，再執行 `python -B backup_local.py --data-dir runtime`，保存兩個 SQLite、manifest 與環境識別；不含 API 設定及 session.key。還原請使用全新的目錄：facility.sqlite3 放根目錄、core.sqlite3 放在 core/research.sqlite3、environment.json 放根目錄、core-environment.json 放在 core/integration-environment.json；不要直接覆蓋正在執行的資料庫。由測試程式驗證快照可以在新目錄重新載入。
 
 測試指令：
 
 ```powershell
-.\.venv\Scripts\python.exe -B -m unittest -v test_care_console
+.\.venv\Scripts\python.exe -B -m unittest -v test_care_console test_case_monitor
 ```
 
 測試使用暫存資料庫與明確的離線替代服務，阻擋外部網路連線，未消耗 API 額度。
 
 ## 已完成與尚未完成
 
-本輪第一版家屬訊息 MVP 的頁面、角色、資料流、API、驗收與機構流程差距，見 [MVP 文件入口](../docs/mvp/README.md)。59 項自動化測試通過；另外以測試客戶端與瀏覽器演示完全虛構的詢問、接手、交班、回覆及結案。獨立主管監控、到期／逾時提醒、正式角色分離、真實 LINE 與場域驗證仍待完成。
+本輪第一版家屬訊息 MVP 的頁面、角色、資料流、API、驗收與機構流程差距，見 [MVP 文件入口](../docs/mvp/README.md)。59 項自動化測試通過；另外以測試客戶端與瀏覽器演示完全虛構的詢問、接手、交班、回覆及結案。上述 59 項是 PR #2 的歷史結果。本輪已新增護理長監控、明確範圍與 IT 隔離；本輪測試及瀏覽器證據見 [最新驗證](../docs/monitor/VERIFICATION.md)。到期／逾時提醒、正式帳號、真實 LINE 與場域驗證仍待完成。
 
 可在本資料夾執行 `python -B demo_family_case.py --output demo-evidence.json` 重跑展示。程式使用全新暫存資料，不接真實 LINE、不呼叫模型、不讀既有 runtime。測試流程及限制見 [驗收與展示](../docs/mvp/ACCEPTANCE.md)。
 

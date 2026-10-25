@@ -2,23 +2,22 @@
 from datetime import timedelta
 from pathlib import Path
 from functools import wraps
-from contextlib import closing
 import io
 import json
 import secrets
 import sys
 import threading
 import time
-import zipfile
-from flask import Flask, jsonify, request, session, render_template, Response, send_file
+from flask import Flask, jsonify, request, session, render_template, Response
 from werkzeug.exceptions import HTTPException
 
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE / 'core'))
 from integration import OfflineLineTransport
-from care_store import CareStore, ROLES, STAFF, ASSESSORS, CSV_FIELDS, stamp
+from care_store import CareStore, ROLES, STAFF, CLINICAL_STAFF, ASSESSORS, CSV_FIELDS, stamp
 from workflow import StaffWorkflow
-from migrations import backup_before_owner_migration
+from migrations import backup_before_owner_migration, backup_before_monitor_upgrade, migrate_monitor_access
+from case_monitor import CaseMonitor
 from conversations import ConversationDirectory, ScopedLiveService, internal_conversation, backup_before_thread_schema
 from werkzeug.exceptions import Conflict
 
@@ -42,19 +41,23 @@ def create_app(data_dir=None, provider=None):
         key_path.write_text(secrets.token_hex(32), encoding='utf-8')
     backup_before_thread_schema(directory)
     backup_before_owner_migration(directory)
+    backup_before_monitor_upgrade(directory)
     store = CareStore(directory)
     conversations = ConversationDirectory(store)
     service = ScopedLiveService(directory / 'core', conversations, transport=OfflineLineTransport(), provider=provider)
     workflow = StaffWorkflow(store, service)
-    for resident in store.residents(store.user('admin')):
-        for thread in conversations.list(store.user('admin'), resident['id']):
+    migrate_monitor_access(workflow)
+    monitor = CaseMonitor(workflow, key_path.read_text(encoding='utf-8'))
+    for resident in store.residents(store.user('nurse')):
+        for thread in conversations.list(store.user('nurse'), resident['id']):
             service.enroll(thread['id'], 'simulation')
     app = Flask(__name__)
     app.config.update(SECRET_KEY=key_path.read_text(encoding='utf-8'), MAX_CONTENT_LENGTH=2 * 1024 * 1024,
                       SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Strict',
-                      SESSION_COOKIE_NAME='care_console_session', PERMANENT_SESSION_LIFETIME=timedelta(hours=1))
+                      SESSION_COOKIE_NAME='care_console_session', PERMANENT_SESSION_LIFETIME=timedelta(hours=1),
+                      SESSION_REFRESH_EACH_REQUEST=False)
     app.extensions.update(care_service=service, care_store=store, care_workflow=workflow,
-                          care_conversations=conversations)
+                          care_conversations=conversations, care_monitor=monitor)
     failures = {}
     failure_lock = threading.Lock()
 
@@ -165,7 +168,7 @@ def create_app(data_dir=None, provider=None):
         return jsonify(ok=True)
 
     @app.get('/api/board')
-    @roles()
+    @roles(*CLINICAL_STAFF)
     def board():
         current = user()
         cards = []
@@ -200,7 +203,7 @@ def create_app(data_dir=None, provider=None):
                        user=current, line_link=store.demo_link(current))
 
     @app.get('/api/residents/<rid>')
-    @roles()
+    @roles(*CLINICAL_STAFF)
     def detail(rid):
         current = user()
         store.require(current, rid)
@@ -267,13 +270,19 @@ def create_app(data_dir=None, provider=None):
             store.record_author(actor, rid, event, channel)
             service.enroll(thread_id, 'simulation')
             result = service.receive(thread_id, text.strip(), event)
+            active_case = service.detail(thread_id)['case']
+            if active_case:
+                with workflow.transaction() as db:
+                    if not db.execute('SELECT 1 FROM care.case_activity WHERE case_id=?', (active_case['id'],)).fetchone():
+                        workflow.activity(db,active_case['id'],None,'case_opened',{'origin':active_case['origin']})
+                    workflow.activity(db,active_case['id'],actor,'message_received',{'event_id':event,'simulated_by':current['id']})
             with store.db() as db:
                 store.log(db, current, 'line_message_simulated' if channel=='demo_line' else 'message_submitted',
                           rid, 'channel=' + channel + '; input_identity=' + actor['id'] + '; conversation=' + thread_id)
         return jsonify(result=result, actual_line_sent=False, conversation_id=thread_id)
 
     @app.post('/api/residents/<rid>/observation')
-    @roles(*STAFF)
+    @roles(*CLINICAL_STAFF)
     def observation(rid):
         with service.lock:
             added = store.add_observation(user(), rid, json_body())
@@ -335,6 +344,8 @@ def create_app(data_dir=None, provider=None):
                     service.review_draft(job_id, text, note, reject=action == 'reject')
                 else:
                     raise ValueError('案件操作無效。')
+            if action in {'reply','approve','reject'}:
+                workflow.record_activity(current,case['id'],'case_'+action,{'job_id':data.get('job_id')})
             with store.db() as db:
                 store.log(db, current, 'case_' + action, rid,
                           'case=' + str(case['id']) + '; conversation=' + thread_id)
@@ -379,6 +390,16 @@ def create_app(data_dir=None, provider=None):
     def bindings():
         return jsonify(store.bindings(user()))
 
+    @app.get('/api/case-monitor')
+    @roles('head_nurse')
+    def case_monitor():
+        return jsonify(monitor.list(user(),request.args))
+
+    @app.get('/api/case-monitor/<int:case_id>/timeline')
+    @roles('head_nurse')
+    def case_timeline(case_id):
+        return jsonify(monitor.timeline(user(),case_id,request.args))
+
     @app.post('/api/bindings')
     @roles('admin')
     def binding():
@@ -387,39 +408,18 @@ def create_app(data_dir=None, provider=None):
             raise ValueError('請提供授權狀態。')
         with service.lock:
             store.grant(user(), data.get('user_id'), data.get('resident_id'), data['allowed'])
-            for thread in conversations.list(user(), data['resident_id']):
-                if thread['contact_id'] == data['user_id'] and not thread['active']:
-                    with service.db() as db:
-                        service.cancel_jobs(db, thread['id'], '聯絡人配對已撤銷，既有生成工作失效。')
+            if not data['allowed']:
+                with store.db() as db:
+                    threads = db.execute('SELECT id FROM contact_conversations WHERE resident_id=? AND contact_id=?',
+                                         (data['resident_id'],data['user_id'])).fetchall()
+                with service.db() as db:
+                    for thread in threads:
+                        service.cancel_jobs(db,thread['id'],'聯絡人配對已撤銷，既有生成工作失效。')
         return jsonify(ok=True)
 
     @app.post('/api/backup')
-    @roles('admin')
+    @roles()
     def backup():
-        destination = directory / 'backups'
-        destination.mkdir(exist_ok=True)
-        filename = 'care-demo-' + stamp().replace(':', '').replace('+', '_') + '-' + secrets.token_hex(4) + '.zip'
-        path = destination / filename
-        with service.lock:
-            temporary = []
-            try:
-                for name, db_path in [('facility.sqlite3', store.path), ('core.sqlite3', service.database)]:
-                    target = destination / (name + '.' + secrets.token_hex(4))
-                    temporary.append((name, target))
-                    import sqlite3
-                    with closing(sqlite3.connect(db_path)) as src, closing(sqlite3.connect(target)) as dst:
-                        src.backup(dst)
-                with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as archive:
-                    for name, target in temporary:
-                        archive.write(target, name)
-                    archive.write(marker, 'environment.json')
-                    archive.write(service.directory / 'integration-environment.json', 'core-environment.json')
-                    archive.writestr('manifest.json', json.dumps({'mode': 'synthetic_local_demo', 'created_at': stamp()}, ensure_ascii=False))
-                with store.db() as db:
-                    store.log(db, user(), 'backup_created', None, 'synthetic_database_snapshot')
-            finally:
-                for _, target in temporary:
-                    target.unlink(missing_ok=True)
-        return send_file(path, as_attachment=True, download_name=filename)
+        raise PermissionError('完整資料庫含臨床內容，已停止網頁下載；請停止服務後使用本機 backup_local.py 維護工具。')
 
     return app

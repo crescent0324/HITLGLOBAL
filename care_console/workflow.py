@@ -1,6 +1,7 @@
 """Staff work summaries and explicit handoffs; no clinical assessment is inferred."""
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import json
 from werkzeug.exceptions import Conflict
 from care_store import STAFF, ASSESSORS, stamp
 from migrations import migrate_case_owner_ids
@@ -31,6 +32,10 @@ class StaffWorkflow:
               status TEXT NOT NULL,created_at TEXT NOT NULL,accepted_at TEXT);
             CREATE UNIQUE INDEX IF NOT EXISTS one_pending_handoff
               ON handoff_requests(case_id) WHERE status='pending';
+            CREATE TABLE IF NOT EXISTS case_activity(
+              id INTEGER PRIMARY KEY,case_id INTEGER NOT NULL,actor TEXT,
+              action TEXT NOT NULL,payload TEXT NOT NULL,created_at TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS activity_by_case ON case_activity(case_id,id);
             ''')
         migrate_case_owner_ids(self)
 
@@ -44,6 +49,14 @@ class StaffWorkflow:
     def log(self, db, user, action, rid, detail):
         db.execute('INSERT INTO care.audit(actor,action,resident_id,detail,created_at) VALUES(?,?,?,?,?)',
                    (user['id'], action, rid, detail, stamp()))
+
+    def activity(self, db, case_id, user, action, payload=None):
+        db.execute('INSERT INTO care.case_activity(case_id,actor,action,payload,created_at) VALUES(?,?,?,?,?)',
+                   (case_id, user['id'] if user else None, action, json.dumps(payload or {}, ensure_ascii=False), stamp()))
+
+    def record_activity(self, user, case_id, action, payload=None):
+        with self.transaction() as db:
+            self.activity(db, case_id, user, action, payload)
 
     def require_staff(self, user, rid, assessor=False):
         self.store.require(user, rid)
@@ -80,6 +93,7 @@ class StaffWorkflow:
                        (stamp(), user['id'], user['id'], case_id))
             self.service.log(db, case['conversation_id'], 'case_claimed', 'case='+str(case_id)+'; operator_id='+user['id'])
             self.service.cancel_jobs(db, case['conversation_id'], '人工接手，自動生成作業停止。', only_auto=True)
+            self.activity(db, case_id, user, 'case_claim', {'operator_id': user['id']})
 
     @staticmethod
     def latest_message(db, case):
@@ -114,7 +128,8 @@ class StaffWorkflow:
             handoff = dict(pending) if pending else None
             if handoff:
                 handoff['stale'] = handoff['message_id'] != self.latest_message(db, case)
-            peers = [dict(r) for r in db.execute("SELECT id,display_name FROM care.users WHERE role IN ('admin','nurse') AND id!=?", (user['id'],))]
+            peers = [dict(r) for r in db.execute('''SELECT u.id,u.display_name FROM care.users u
+                JOIN care.access a ON a.user_id=u.id WHERE u.role='nurse' AND u.id!=? AND a.resident_id=?''', (user['id'],rid))]
             history = [dict(r) for r in db.execute('''SELECT c.id,c.closed_at,c.close_note,c.operator,c.operator_id,
                 n.summary,n.next_action,n.waiting_for FROM cases c LEFT JOIN care.case_notes n ON n.case_id=c.id
                 WHERE c.conversation_id=? AND c.status='closed' ORDER BY c.id DESC LIMIT 5''',
@@ -160,6 +175,7 @@ class StaffWorkflow:
                    (case['id'],rid,data['summary'],data['next_action'],data['waiting_for'],revision+1,user['id'],stamp()))
         db.execute("UPDATE care.handoff_requests SET status='cancelled' WHERE case_id=? AND status='pending'",(case['id'],))
         self.log(db,user,'case_progress_saved',rid,'case='+str(case['id']))
+        self.activity(db,case['id'],user,'case_progress_saved',data | {'revision':revision+1})
 
     def save_note(self, user, rid, data, conversation_id=None):
         self.require_staff(user,rid,True);note=self.validated_note(data)
@@ -181,6 +197,7 @@ class StaffWorkflow:
                        (case['id'],rid,user['id'],target['id'],note['summary'],note['next_action'],note['waiting_for'],
                         self.latest_message(db,case),'pending',stamp()))
             self.log(db,user,'handoff_proposed',rid,'case='+str(case['id'])+'; to='+target['id'])
+            self.activity(db,case['id'],user,'handoff_proposed',{'to_user':target['id'],**note})
 
     def accept(self, user, rid, request_id, conversation_id=None):
         self.require_staff(user,rid,True)
@@ -192,7 +209,7 @@ class StaffWorkflow:
             if not h or h['to_user']!=user['id']:
                 raise PermissionError('只有指定接班帳號可以接收有效交班。')
             old=self.store.user(h['from_user'])
-            if case['status']!='claimed' or not old or old['role'] not in ASSESSORS or case.get('operator_id')!=old['id']:
+            if case['status']!='claimed' or not old or old['role'] not in ASSESSORS or not self.store.allowed(old,rid) or case.get('operator_id')!=old['id']:
                 raise Conflict('案件責任人已變更，請重新確認。')
             if h['message_id']!=self.latest_message(db,case):
                 raise Conflict('交班提出後有新訊息或回覆，請原接手者更新內容並重新提出交班。')
@@ -201,6 +218,7 @@ class StaffWorkflow:
             self.service.cancel_jobs(db,case['conversation_id'],'交班已確認，舊生成工作不沿用。')
             self.service.log(db,case['conversation_id'],'case_handoff_accepted','case='+str(case['id'])+'; operator_id='+user['id'])
             self.log(db,user,'handoff_accepted',rid,'case='+str(case['id'])+'; from='+old['id'])
+            self.activity(db,case['id'],user,'handoff_accepted',{'from_user':old['id'],'operator_id':user['id']})
 
     def cancel(self, user, rid, conversation_id=None):
         self.require_staff(user,rid,True)
@@ -208,6 +226,7 @@ class StaffWorkflow:
             case=self.current_case(db,rid,conversation_id);self.require_owner(user,case)
             db.execute("UPDATE care.handoff_requests SET status='cancelled' WHERE case_id=? AND status='pending'",(case['id'],))
             self.log(db,user,'handoff_cancelled',rid,'case='+str(case['id']))
+            self.activity(db,case['id'],user,'handoff_cancelled')
 
     def resolve(self, user, rid, note, conversation_id=None):
         self.require_staff(user,rid,True)
@@ -217,3 +236,4 @@ class StaffWorkflow:
             db.execute("UPDATE care.handoff_requests SET status='cancelled' WHERE case_id=? AND status='pending'",(case['id'],))
             self.service.cancel_jobs(db,case['conversation_id'],'事件已結案，舊草稿不再適用。')
             self.service.log(db,case['conversation_id'],'case_closed_automation_resumed','case='+str(case['id'])+'; note='+note)
+            self.activity(db,case['id'],user,'case_resolve',{'note':note,'operator_id':user['id']})

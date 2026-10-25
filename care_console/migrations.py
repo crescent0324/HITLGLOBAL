@@ -4,9 +4,90 @@ from pathlib import Path
 import json
 import secrets
 import sqlite3
-from care_store import ASSESSORS, stamp
+import re
+from werkzeug.security import generate_password_hash
+from care_store import ASSESSORS, DEMO_PASSWORD, stamp
 
 OWNER_MIGRATION = 'stable_case_owner_v1'
+MONITOR_MIGRATION = 'staff_scope_monitor_v2'
+
+
+def backup_before_monitor_upgrade(directory):
+    directory = Path(directory)
+    facility = directory / 'facility.sqlite3'
+    if not facility.exists():
+        return
+    with closing(sqlite3.connect(facility)) as db:
+        if db.execute('SELECT 1 FROM meta WHERE key=?', (MONITOR_MIGRATION,)).fetchone():
+            return
+    target = directory / 'backups' / ('before-staff-scope-monitor-v2-' + secrets.token_hex(8))
+    target.mkdir(parents=True)
+    for name, source in [('facility.sqlite3', facility), ('core.sqlite3', directory / 'core/research.sqlite3')]:
+        if source.exists():
+            with closing(sqlite3.connect(source)) as src, closing(sqlite3.connect(target / name)) as dst:
+                src.backup(dst)
+    for name in ('environment.json', 'core/integration-environment.json'):
+        source = directory / name
+        if source.exists():
+            (target / source.name).write_bytes(source.read_bytes())
+    (target / 'manifest.json').write_text(json.dumps({
+        'purpose': MONITOR_MIGRATION, 'created_at': stamp(), 'credentials_included': False,
+    }), encoding='utf-8')
+
+
+def migrate_monitor_access(workflow):
+    with workflow.transaction() as db:
+        db.execute('BEGIN IMMEDIATE')
+        if db.execute('SELECT 1 FROM care.meta WHERE key=?', (MONITOR_MIGRATION,)).fetchone():
+            return
+        if 'due_at' not in {r['name'] for r in db.execute('PRAGMA table_info(cases)')}:
+            db.execute('ALTER TABLE cases ADD COLUMN due_at TEXT DEFAULT NULL')
+        current = stamp()
+        # Preserve the old nurses' effective scope once; later revocation survives restart.
+        db.execute('''INSERT OR IGNORE INTO care.access(user_id,resident_id)
+            SELECT u.id,r.id FROM care.users u CROSS JOIN care.residents r
+            WHERE u.role='nurse' AND r.active=1''')
+        db.execute('''INSERT OR IGNORE INTO care.staff_role_migrations
+            SELECT id,role,? FROM care.users WHERE role='admin' ''', (current,))
+        db.execute("UPDATE care.users SET display_name='IT 管理體驗帳號' WHERE role='admin' AND display_name='管理者體驗帳號'")
+        head = db.execute("SELECT role FROM care.users WHERE id='head_nurse'").fetchone()
+        if head and head['role'] != 'head_nurse':
+            raise ValueError('護理長示範帳號 ID 已屬於其他身分，請先核對；不自動提升權限。')
+        if not head:
+            if db.execute("SELECT 1 FROM care.users WHERE username='head_nurse'").fetchone():
+                raise ValueError('護理長示範帳號名稱衝突，請先核對既有身分。')
+            db.execute('INSERT INTO care.users VALUES(?,?,?,?,?)',
+                       ('head_nurse', 'head_nurse', '護理長體驗帳號', 'head_nurse', generate_password_hash(DEMO_PASSWORD)))
+            db.execute('''INSERT OR IGNORE INTO care.access
+                SELECT 'head_nurse',id FROM care.residents WHERE active=1 AND id IN ('R001','R002')''')
+        # Retain existing audit events without inventing old progress revisions.
+        known = {r['id']: dict(r) for r in db.execute('SELECT * FROM cases')}
+        actions = {'case_claim','case_reply','case_resolve','case_approve','case_reject',
+                   'case_progress_saved','handoff_proposed','handoff_accepted','handoff_cancelled'}
+        for row in db.execute('SELECT * FROM care.audit ORDER BY id').fetchall():
+            match = re.search(r'(?:^|;)\s*case=(\d+)(?:;|$)', row['detail'])
+            case = known.get(int(match[1])) if match and row['action'] in actions else None
+            if case:
+                db.execute('''INSERT INTO care.case_activity(case_id,actor,action,payload,created_at)
+                    VALUES(?,?,?,?,?)''', (case['id'],row['actor'],row['action'],
+                    json.dumps({'legacy_audit_id': row['id'], 'legacy': True}),row['created_at']))
+        for case in known.values():
+            note = db.execute('SELECT * FROM care.case_notes WHERE case_id=?', (case['id'],)).fetchone()
+            workflow.activity(db, case['id'], None, 'legacy_snapshot', {
+                'legacy': True, 'status': case['status'], 'operator_id': case['operator_id'],
+                'progress': dict(note) if note else None, 'close_note': case['close_note'],
+            })
+            account = db.execute('SELECT role FROM care.users WHERE id=?', (case['operator_id'],)).fetchone()
+            if case['status'] == 'claimed' and (not account or account['role'] not in ASSESSORS):
+                db.execute("UPDATE cases SET status='pending',operator=NULL,operator_id=NULL,claimed_at=NULL WHERE id=?", (case['id'],))
+                db.execute("UPDATE care.handoff_requests SET status='cancelled' WHERE case_id=? AND status='pending'", (case['id'],))
+                workflow.service.cancel_jobs(db, case['conversation_id'], '舊合併管理身分已改為 IT，案件須由有權護理師重新接手。')
+                workflow.activity(db, case['id'], None, 'role_split_pending', {'previous_operator_id': case['operator_id']})
+                workflow.service.log(db, case['conversation_id'], 'case_role_split_pending', 'case='+str(case['id']))
+        db.execute('''UPDATE care.handoff_requests SET status='cancelled' WHERE status='pending' AND
+            (from_user NOT IN (SELECT id FROM care.users WHERE role='nurse') OR
+             to_user NOT IN (SELECT id FROM care.users WHERE role='nurse'))''')
+        db.execute('INSERT INTO care.meta VALUES(?,?)', (MONITOR_MIGRATION, current))
 
 
 def backup_before_owner_migration(directory):

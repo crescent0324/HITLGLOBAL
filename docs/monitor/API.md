@@ -1,0 +1,59 @@
+# 監控 API：本輪實作契約
+
+只供 localhost 與本機虛構資料。兩個 GET 均限目前角色為 `head_nurse`，每次從資料庫重查角色及住民範圍；後端先 JOIN 有效住民與 access，才查案件、進度及事件。護理師、照服員及 IT 均 403。未登入 401，不存在或不在範圍的單一案件同為 404。
+
+## GET /api/case-monitor
+
+| 查詢 | 型態與預設 | 語意 |
+| --- | --- | --- |
+| status | open、all、pending、claimed、closed；預設 open | open 只含 pending／claimed；all 另含已結案 |
+| owner_id | 字串，最多 80 字；預設空 | 使用帳號 ID，不用顯示名稱；`__unassigned__` 表示尚無責任 ID |
+| from／to | 含時區 ISO 8601，可空 | 案件建立時間，含起迄界線；伺服器轉 UTC，開始不得晚於結束 |
+| limit | 整數 1～50，預設 10 | 後端回傳上限；不是只在瀏覽器隱藏多餘資料 |
+| cursor | 不透明簽章字串，可空 | 沿用前頁的相同帳號、範圍、篩選與版本，15 分鐘內使用 |
+
+不接受未知或重複欄位。空篩選、零結果及無授權住民都可回 200 空清單；不假造住民或補成全機構權限。
+
+| 回應欄位 | 內容 |
+| --- | --- |
+| cases | 本頁案件摘要，按 case.id DESC；含住民／床位、聯絡標籤、狀態、責任 ID／名稱／有效性、下一步、待確認、進度版本、交班、建立／接手／結案時間及期限狀態 |
+| stats | 同一授權範圍與篩選下的全部案件統計，於分頁前計算 |
+| owners | 目前符合篩選的責任 ID／名稱，無其他住民的責任資料 |
+| scope_resident_ids | 本次目前授權的有效住民；不是全機構清單 |
+| filters | 正規化篩選，時間為 UTC |
+| next_cursor | 還有下一頁才有值，否則 null |
+| updated_at | 本次查詢時間，UTC ISO 8601；不是醫療監測時間 |
+| statistics_note／deadline_note | 重疊與未知時限的說明 |
+
+`progress` 在尚未保存時為 null；清單只帶下一步、待確認、revision 與更新時間，不帶完整處理摘要。`owner` 在待接手時可為 null；已接手但帳號失權時保留責任 ID、valid=false 並提示確認，不自動轉給別人。
+
+`handoff` 為 null 或包含 id、from_user／from_name、to_user／to_name、created_at、message_id、stale、valid。新的訊息造成 stale=true；目前責任、角色或住民權限不符也造成 valid=false，不計入有效待接受數。
+
+統計 `total_cases` 是符合篩選的唯一案件數；`open_cases` 是 pending+claimed，`closed_cases` 分開。`pending_handoffs` 包含於 claimed；`stale_handoffs` 是需重提／確認的 pending request。`deadline_unset` 只計 due_at=null；`overdue_cases` 為 null，未建立時限分母或逾期判定。
+
+## GET /api/case-monitor/{case_id}/timeline
+
+case_id 是正整數；查詢只接受 limit（1～50，預設 20）與 cursor。先確認案件屬於授權住民，才讀此 case_id 的活動，不能只憑全域編號取得內容。
+
+回應 `case` 為上述摘要加最新完整進度 summary 及結案結果；`events` 按活動 ID 由新到舊，每項含 id、case_id、actor 帳號 ID、actor_name、action、payload、created_at。`next_cursor` 提供更早事件，`history_note` 說明舊版資料限制。
+
+新事件保存進度當時的 summary／next_action／waiting_for／revision、交班對象、接受前後責任、回覆及結案的操作軌跡。家屬訊息事件只記來源事件碼及模擬操作者，不把訊息原文複製到監控歷程。
+
+舊資料只匯入原有稽核事件及目前最新進度快照，`payload.legacy=true`。沒有保存的舊版進度內容維持未知，不把一次快照冒稱為完整逐次歷史。
+
+## 失敗與唯讀界線
+
+| 狀態 | 行為 |
+| --- | --- |
+| 400 | 格式、時區、筆數、重複欄位或竄改游標錯誤；只回 error，不附案件資料 |
+| 401 | 目前無院內工作階段；畫面回登入並清除受限內容 |
+| 403 | 不是護理長；不得以 IT、照服員或護理師身分讀監控 |
+| 404 | 單一案件不存在或失去住民授權；歷程內容清空 |
+| 409 | 游標過期、資料、範圍、帳號或篩選變動；從第一頁重查，不接續舊結果 |
+| 405 | 對監控端點使用 POST；沒有寫入端點 |
+
+讀取失敗、撤權或角色切換時，監控畫面清除案件與歷程；不保留受限舊內容假裝已同步。篩選輸入仍保留供修正。每 15 秒更新；正在編輯篩選時暫停自動更新，使用者可隨時手動重新查詢。
+
+IT 的 `/api/bindings` 僅回帳號、住民識別及配對管理資料。原 `/api/backup` 改為所有網頁角色 403，以免透過資料庫下載繞過欄位與住民權限；完整離線備份見 [維護說明](MIGRATION.md)。護理長沒有一般住民詳細 API、臨床評估、訊息回覆或案件寫入權；原護理師的 HITL 操作仍使用穩定責任 ID。
+
+機器可讀子集見 [OpenAPI](openapi.json)。舊 [MVP 契約](../mvp/openapi.json) 為 PR #2 基準時的歷史子集，不能再以其中 admin 的舊描述推定本輪權限。
