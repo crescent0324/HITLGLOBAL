@@ -293,7 +293,11 @@ class CareStore:
             raise PermissionError('床位異動僅限管理者或護理師。')
         with self.db() as db:
             return [dict(r) for r in db.execute('''SELECT b.id,b.ward,p.resident_id
-                FROM beds b LEFT JOIN placements p ON p.bed_id=b.id AND p.ended_at IS NULL ORDER BY b.id''')]
+                FROM beds b LEFT JOIN placements p ON p.bed_id=b.id AND p.ended_at IS NULL
+                WHERE p.resident_id IS NULL OR EXISTS (
+                    SELECT 1 FROM access a JOIN residents r ON r.id=a.resident_id
+                    WHERE a.user_id=? AND a.resident_id=p.resident_id AND r.active=1
+                ) ORDER BY b.id''', (user['id'],))]
 
     def grant(self, user, target, rid, allowed):
         if user['role'] != 'admin':

@@ -122,6 +122,65 @@ class CaseMonitorTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 method(self.store.user('admin'),'R001')
 
+    def test_beds_follow_scope_changes_in_existing_nurse_sessions(self):
+        for uid in ['nurse', 'nurse2']:
+            with self.subTest(uid=uid):
+                client = self.client(uid)
+                account = self.store.user(uid)
+                self.assertEqual(len(client.get('/api/beds').get_json()['beds']), 8)
+                for number in range(2, 7):
+                    self.grant(uid, f'R{number:03}', False)
+                response = client.get('/api/beds', query_string={'user_id': 'nurse2', 'resident_id': 'R003'})
+                self.assertEqual(response.status_code, 200)
+                beds = response.get_json()['beds']
+                self.assertEqual(beds, [
+                    {'id': 'A101', 'ward': 'A 區', 'resident_id': 'R001'},
+                    {'id': 'A107', 'ward': 'A 區', 'resident_id': None},
+                    {'id': 'A108', 'ward': 'A 區', 'resident_id': None}])
+                self.assertEqual(self.store.beds(account), beds)
+                self.assertEqual(client.get('/api/residents/R003').status_code, 403)
+                self.grant(uid, 'R001', False)
+                empty_beds = beds[1:]
+                self.assertEqual(client.get('/api/board').get_json()['cards'], [])
+                self.assertEqual(client.get('/api/beds').get_json()['beds'], empty_beds)
+                self.assertEqual(self.store.beds(account), empty_beds)
+                self.grant(uid, 'R004', True)
+                self.assertEqual(client.get('/api/beds').get_json()['beds'], [
+                    {'id': 'A104', 'ward': 'A 區', 'resident_id': 'R004'}, *empty_beds])
+
+    def test_scoped_beds_keep_empty_choices_and_move_validation(self):
+        client = self.client('nurse')
+        for number in range(2, 7):
+            self.grant('nurse', f'R{number:03}', False)
+        self.assertEqual(self.post('nurse', '/api/residents/R001/move', {'bed_id': 'A102'}).status_code, 400)
+        self.assertEqual(self.post('nurse', '/api/residents/R002/move', {'bed_id': 'A108'}).status_code, 403)
+        self.assertEqual(self.post('nurse', '/api/residents/R001/move', {'bed_id': 'A107'}).status_code, 200)
+        self.assertEqual(client.get('/api/beds').get_json()['beds'], [
+            {'id': 'A101', 'ward': 'A 區', 'resident_id': None},
+            {'id': 'A107', 'ward': 'A 區', 'resident_id': 'R001'},
+            {'id': 'A108', 'ward': 'A 區', 'resident_id': None}])
+        self.assertEqual(client.get('/api/board').get_json()['cards'][0]['bed_id'], 'A107')
+        with self.store.db() as db:
+            self.assertEqual(db.execute("SELECT bed_id FROM placements WHERE resident_id='R002' AND ended_at IS NULL").fetchone()['bed_id'], 'A102')
+
+    def test_beds_do_not_expose_inactive_resident_placements_as_empty(self):
+        client = self.client('nurse')
+        with self.store.db() as db:
+            db.execute("UPDATE residents SET active=0 WHERE id='R002'")
+        beds = client.get('/api/beds').get_json()['beds']
+        self.assertEqual({b['id'] for b in beds}, {'A101', 'A103', 'A104', 'A105', 'A106', 'A107', 'A108'})
+        self.assertEqual({b['id'] for b in beds if b['resident_id'] is None}, {'A107', 'A108'})
+        self.assertNotIn('R002', {b['resident_id'] for b in beds})
+
+    def test_bed_scope_filter_does_not_expand_other_roles(self):
+        self.assertEqual(self.app.test_client().get('/api/beds').status_code, 401)
+        for uid in ['admin', 'head_nurse', 'caregiver']:
+            with self.subTest(uid=uid):
+                self.assertEqual(self.client(uid).get('/api/beds').status_code, 403)
+        for uid in ['admin', 'head_nurse', 'caregiver', 'family', 'resident']:
+            with self.subTest(store_role=uid), self.assertRaises(PermissionError):
+                self.store.beds(self.store.user(uid))
+
     def test_head_nurse_is_read_only_and_cannot_extend_own_scope(self):
         case = self.case(claimed=True)
         self.assertEqual(self.timeline(case).status_code,200)
