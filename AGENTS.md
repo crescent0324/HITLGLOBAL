@@ -70,8 +70,10 @@ Windows／Python 3.12 的標準命令如下，實際套件版本以 requirements
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\start.cmd
-.\.venv\Scripts\python.exe -B -m unittest -v test_care_console
+.\.venv\Scripts\python.exe -B -m unittest -v test_care_console test_case_monitor test_backup_hardening test_monitor_hardening
 ```
+
+前端測試需要 Node.js 20 以上，在同一資料夾執行 `npm install` 與 `npm test`。完整整合基準與歷史文件的版本界線見 [整合現況](docs/INTEGRATION_STATUS.md)。
 
 - 依修改範圍先跑相關測試；更動共同治理邏輯、權限、資料庫或交付完整版本時，執行受影響子專案的完整檢查。只有文件修改時核對內容與連結即可，不必重跑全部測試。
 - 測試失敗時先區分產品錯誤、測試過時與環境問題。若更新測試，保留原先要驗證的行為，說明修改依據；不可刪除重要斷言來取得通過。

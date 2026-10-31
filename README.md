@@ -4,6 +4,8 @@
 
 目前為虛構資料的本機體驗版，使用模擬 LINE 聯絡身分與離線傳輸。已完成本機護理長唯讀監控與 IT 權限分離；真實 LINE 配對、院內資料介接、正式帳號、常駐部署及第一線試用仍待完成。
 
+2026-10-31 整合核對：PR #1～#7 已全部納入 main，包含床位查詢的住民範圍修正；七個既有遠端工作分支均無未合併提交。合併順序、重複修改檢查、完整測試與剩餘事項集中於 [整合現況](docs/INTEGRATION_STATUS.md)。各輪研究與驗證文件保留原日期及固定版本。
+
 已完成本機聯絡人對話隔離：同一住民的不同聯絡人分別保存訊息、生成工作及人工案件；撤銷配對後停止新訊息與回覆。原先混合保存的對話保留為院內舊版紀錄，不指定對外收件者。實作與本輪測試見 [聯絡人對話驗證](docs/CONTACT_CONVERSATIONS.md)。
 
 ## 安全整合與 MVP
@@ -41,10 +43,12 @@ python -m venv .venv
 在 `care_console/` 執行：
 
 ```powershell
-.\.venv\Scripts\python.exe -B -m unittest -v test_care_console test_case_monitor
+.\.venv\Scripts\python.exe -B -m unittest -v test_care_console test_case_monitor test_backup_hardening test_monitor_hardening
+npm install
+npm test
 ```
 
-測試使用暫存資料庫、虛構住民與離線替代服務，不需要 LINE 或 OpenAI 金鑰。本次分離的檢查方式與限制見 [匯入驗證紀錄](docs/IMPORT_VERIFICATION.md)。
+前端測試需要 Node.js 20 以上。上述指令涵蓋四個後端測試模組及前端測試；測試使用暫存資料庫、虛構住民與離線替代服務，不需要 LINE 或 OpenAI 金鑰。各模組數量與本輪結果見 [整合現況](docs/INTEGRATION_STATUS.md)；初次分離的歷史檢查見 [匯入驗證紀錄](docs/IMPORT_VERIFICATION.md)。
 
 ## 目錄
 
