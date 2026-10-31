@@ -19,8 +19,9 @@
 | --- | --- |
 | `care_console/` | 後續開發的護理之家照護協作台；本機介面預設 `127.0.0.1:9465` |
 | `care_console/core/` | 照護協作台使用的核心快照；與論文原型分開維護 |
+| `docs/README.md` | 文件總覽；依操作、試用、規格與歷史證據選入口 |
 | `docs/SEPARATION.md` | 與論文版本的界線、程式來源及後續維護規則 |
-| `docs/IMPORT_VERIFICATION.md` | 本次分離的實際檢查紀錄，非往後每次變更的通過證明 |
+| `docs/archive/2026-10-20/IMPORT_VERIFICATION.md` | 初次分離的歷史檢查紀錄，非往後每次變更的通過證明 |
 
 程式以 Python、Flask、Waitress、SQLite 與原生 HTML／CSS／JavaScript 組成。依子專案的 requirements 建立獨立 `.venv`；不要將其他電腦的絕對路徑寫入啟動腳本。
 
@@ -70,8 +71,10 @@ Windows／Python 3.12 的標準命令如下，實際套件版本以 requirements
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\start.cmd
-.\.venv\Scripts\python.exe -B -m unittest -v test_care_console
+.\.venv\Scripts\python.exe -B -m unittest -v test_care_console test_case_monitor test_backup_hardening test_monitor_hardening
 ```
+
+前端測試需要 Node.js 20 以上，在同一資料夾執行 `npm install` 與 `npm test`。完整整合基準與歷史文件的版本界線見 [整合現況](docs/INTEGRATION_STATUS.md)。
 
 - 依修改範圍先跑相關測試；更動共同治理邏輯、權限、資料庫或交付完整版本時，執行受影響子專案的完整檢查。只有文件修改時核對內容與連結即可，不必重跑全部測試。
 - 測試失敗時先區分產品錯誤、測試過時與環境問題。若更新測試，保留原先要驗證的行為，說明修改依據；不可刪除重要斷言來取得通過。
