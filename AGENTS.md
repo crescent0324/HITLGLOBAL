@@ -19,8 +19,9 @@
 | --- | --- |
 | `care_console/` | 後續開發的護理之家照護協作台；本機介面預設 `127.0.0.1:9465` |
 | `care_console/core/` | 照護協作台使用的核心快照；與論文原型分開維護 |
+| `docs/README.md` | 文件總覽；依操作、試用、規格與歷史證據選入口 |
 | `docs/SEPARATION.md` | 與論文版本的界線、程式來源及後續維護規則 |
-| `docs/IMPORT_VERIFICATION.md` | 本次分離的實際檢查紀錄，非往後每次變更的通過證明 |
+| `docs/archive/2026-10-20/IMPORT_VERIFICATION.md` | 初次分離的歷史檢查紀錄，非往後每次變更的通過證明 |
 
 程式以 Python、Flask、Waitress、SQLite 與原生 HTML／CSS／JavaScript 組成。依子專案的 requirements 建立獨立 `.venv`；不要將其他電腦的絕對路徑寫入啟動腳本。
 
