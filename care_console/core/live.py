@@ -305,9 +305,9 @@ class LiveService(ModelContextMixin, IntegratedService):
             with self.db() as db:
                 case = db.execute("SELECT * FROM cases WHERE conversation_id=? AND status!='closed'", (participant,)).fetchone()
                 if case:
-                    status = ('這段對話目前由研究操作人員處理，你的新訊息已記錄。'
+                    status = ('這段對話目前由院內工作人員處理，你的新訊息已記錄。'
                               if case['status'] == 'claimed' else
-                              '你的新訊息已記錄在同一件待辦，目前仍在等待研究操作人員接手。')
+                              '你的新訊息已記錄在同一件待辦，目前仍在等待院內工作人員接手。')
                     answer = status + '先前的事件尚未結案，一般自動回覆仍暫停；由操作人員確認處理完成並結案後恢復。'
                     source = 'case_status_notice'
                     db.execute('UPDATE service_decisions SET reply_source=? WHERE event_id=?', (source, event_id))
@@ -340,7 +340,7 @@ class LiveService(ModelContextMixin, IntegratedService):
 
     def _missing_content(self, participant, event_id):
         need = dict(key='uncovered', label='資料待補與需求整理', route='content_pending',
-            intro='目前資料尚未涵蓋這項需求，已列入研究操作人員的待辦。',
+            intro='目前資料尚未涵蓋這項需求，已列入院內工作人員的待辦。',
             question='最希望先獲得哪一項協助？', sources=[])
         return self.open_service_request(participant, event_id, need, [], 'content_pending')
 

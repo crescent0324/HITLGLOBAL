@@ -57,8 +57,11 @@ class CaseMonitorTests(unittest.TestCase):
         return case
 
     def action(self, case, action, uid='nurse', **body):
+        with self.app.extensions['care_service'].db() as db:
+            seen = db.execute('SELECT COALESCE(MAX(id),0) FROM messages WHERE conversation_id=?',
+                              (case['conversation_id'],)).fetchone()[0]
         return self.post(uid,f"/api/residents/{case['rid']}/case/{action}",
-                         {'case_id':case['case_id'],'conversation_id':case['conversation_id'],**body})
+                         {'case_id':case['case_id'],'conversation_id':case['conversation_id'],'seen_message_id':seen,**body})
 
     def progress(self, case, revision=0, **changes):
         return self.action(case,'progress',revision=revision,summary='虛構已處理 '+str(revision),
@@ -305,9 +308,12 @@ class CaseMonitorTests(unittest.TestCase):
             request_id=db.execute('SELECT id FROM handoff_requests WHERE case_id=?',(case['case_id'],)).fetchone()[0]
         self.grant('nurse','R001',False)
         self.assertEqual(self.action(case,'reply',text='失權後不能回覆').status_code,403)
-        self.assertEqual(self.action(case,'accept_handoff',uid='nurse2',request_id=request_id).status_code,409)
+        # Revocation returns the case to pending and cancels the old owner's handoff, so the
+        # stale handoff cannot be accepted and an authorized nurse can claim the case instead.
+        self.assertEqual(self.action(case,'accept_handoff',uid='nurse2',request_id=request_id).status_code,403)
         item=self.monitor()['cases'][0]
-        self.assertFalse(item['owner']['valid']);self.assertFalse(item['handoff']['valid'])
+        self.assertEqual(item['status'],'pending');self.assertIsNone(item['handoff'])
+        self.assertEqual(self.action(case,'claim',uid='nurse2').status_code,200)
         self.restart()
         self.assertFalse(self.store.allowed(self.store.user('nurse'),'R001'))
 

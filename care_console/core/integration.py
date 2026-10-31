@@ -86,7 +86,7 @@ class IntegratedService(ResearchService):
   scope=assess_service_scope(text,result).to_dict()
   entry_sources=[]
   if result.risk=='高' and state=='human_active' and answer:
-   answer=answer.replace('目前尚未確認有人受理。','目前由研究操作人員接手。')
+   answer=answer.replace('目前尚未確認有人受理。','目前由院內工作人員接手。')
   # Never route around current high risk, an explicit human request, or an open
   # human case. Entry information is fixed curated text, never a model output.
   if result.risk=='低' and state=='automatic' and scope['allow_entry_information'] and scope['route'] in {'medical','coordination','content_pending'}:
@@ -100,12 +100,12 @@ class IntegratedService(ResearchService):
               intro='目前資料還沒有涵蓋你提出的照顧需求，已列入人工待辦。',question='最希望先獲得哪一項協助？',sources=[])
     answer,source,state=self.open_service_request(participant,event_id,need,[],'content_pending')
    elif source=='scope_notice':
-    answer='這則訊息還有需要確認的健康或個別處理內容，已列入研究操作人員的待辦，目前尚未接手。系統不會據此提供醫療處置或核定個人資格；本帳號沒有醫療人員值班。'
+    answer='這則訊息還有需要確認的健康或個別處理內容，已列入院內工作人員的待辦，目前尚未接手。系統不會據此提供醫療處置或核定個人資格；本帳號不保證即時有人回覆。'
    elif source=='review_notice':
     with self.db() as db:
      case=db.execute("SELECT * FROM cases WHERE conversation_id=? AND status!='closed'",(participant,)).fetchone()
     if case and case['origin'] in {'service_coordination','medical_referral','content_pending'}:
-     answer='補充需求已記錄，仍在等待研究操作人員接手。尚未替你聯絡外部單位；可先使用前面提供的洽詢入口。'
+     answer='補充需求已記錄，仍在等待院內工作人員接手。尚未替你聯絡外部單位；可先使用前面提供的洽詢入口。'
   if source=='generation_notice' and self.integration_mode=='offline':
    answer=('訊息已列入人工確認清單，目前尚不代表已有人接手。正在建立離線測試草稿，供操作人員審閱。'
            if state=='awaiting_review' else '正在建立離線測試回覆，完成後會顯示在本機對話中。')
@@ -122,7 +122,7 @@ class IntegratedService(ResearchService):
    db.execute('INSERT INTO service_requests VALUES(?,?,?,?,?,?,?)',
     (event_id,participant,case['id'],json.dumps(need,ensure_ascii=False),json.dumps(sources,ensure_ascii=False),self.knowledge.sha256,now()))
    self.log(db,participant,'service_help_requested',f'event={event_id}; need={need["key"]}; origin={origin}; external_contact=not_contacted')
-  notice='已列入研究操作人員的待辦，目前尚未接手，也尚未替你聯絡外部單位。本帳號沒有醫療人員值班。'
+  notice='已列入院內工作人員的待辦，目前尚未接手，也尚未替你聯絡外部單位。本帳號不保證即時有人回覆。'
   answer=need['intro']+'\n\n'+notice
   if sources:
    answer+='\n\n可先洽詢的資料：\n'+'\n\n'.join(s['summary']+'\n'+s['url'] for s in sources)

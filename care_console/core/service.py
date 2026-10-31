@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import http.client
 import json
 import secrets
 import sqlite3
@@ -21,7 +22,7 @@ VERSION = "line-caregiver-0.5.0"
 RANK = {"低": 0, "中": 1, "高": 2}
 HUMAN_COMMANDS = {"轉人工", "人工協助", "找人工"}
 WELCOME = "這是論文研究展示帳號，沒有醫療人員值班。請只使用虛構測試訊息，不提供診斷或治療。請向研究者取得加入碼，再傳送「加入 加入碼」。"
-LOW_REPLY = "已收到你的訊息。這個研究原型可示範長照對話的分級與人工協助流程，目前使用固定範本回覆。需要操作人員協助時，請傳送「轉人工」。系統接收訊息不代表已確認健康狀況。"
+LOW_REPLY = "已收到你的訊息。目前使用固定範本回覆。需要院內工作人員協助時，請傳送「轉人工」。系統接收訊息不代表已確認健康狀況。"
 
 
 def now():
@@ -94,7 +95,7 @@ class LineTransport:
             if kind == "push" and exc.code == 409 and exc.headers.get("x-line-accepted-request-id"):
                 return
             raise DeliveryError(f"LINE API 回傳 HTTP {exc.code}；尚未確認收件者收到訊息。") from None
-        except (error.URLError, TimeoutError, OSError):
+        except (error.URLError, TimeoutError, OSError, http.client.HTTPException):
             raise DeliveryError("LINE API 連線失敗或逾時，送出結果不確定；請先核對 LINE 對話。") from None
 
 
@@ -213,17 +214,17 @@ class Service:
 
             # State gates run before any general response. The present version has no LLM provider.
             if result.risk == "高":
-                notice = "研究操作人員已接手。" if state == "human_active" else "已建立待接手事件，尚不代表有人接手。"
-                answer = plan.fixed_message + "\n研究展示：" + notice + "本帳號沒有醫療人員值班。"
+                notice = "院內工作人員已接手。" if state == "human_active" else "已建立待接手事件，尚不代表有人接手。"
+                answer = plan.fixed_message + "\n" + notice + "本帳號不保證即時有人回覆。"
                 source = "fixed_safety"
             elif state == "human_active":
                 answer, source = None, None
             elif state == "awaiting_takeover":
-                answer = "訊息已記錄，正在等待研究操作人員接手，一般自動回覆已暫停。本帳號沒有醫療人員值班；請勿等待本帳號提供緊急協助。"
+                answer = "訊息已記錄，正在等待院內工作人員接手，一般自動回覆已暫停。本帳號不保證即時有人回覆；請勿等待本帳號提供緊急協助。"
                 source = "waiting_notice"
             elif state == "awaiting_review":
                 answer = ("你提供的資訊需要進一步確認。此版本僅使用固定範本，不提供診斷、調藥或治療決策。"
-                          "\n訊息已列入研究操作人員的待確認清單，目前尚未接手。你也可以傳送「轉人工」。")
+                          "\n訊息已列入院內工作人員的待確認清單，目前尚未接手。你也可以傳送「轉人工」。")
                 source = "restricted_template"
             else:
                 answer, source = LOW_REPLY, "general_template"

@@ -4,9 +4,10 @@
 
 | 你要做什麼 | 先讀 | 需要時再查 |
 | --- | --- | --- |
+| 第一次接觸本專案 | [一頁看懂](OVERVIEW.md) | 本頁其他入口 |
 | 啟動系統、查看角色或操作 | [操作說明](../care_console/README.md) | 同頁的交班、資料、備份與測試說明 |
 | 主持第一場虛構資料試用 | [UAT 入口](uat/README.md) | [快速開始](uat/QUICK_START.md)、[U01～U20 任務](uat/TEST_SCENARIOS.md) |
-| 確認 PR、分支與最新回歸 | [整合現況](INTEGRATION_STATUS.md) | [床位權限修正](BED_SCOPE_FIX.md) |
+| 確認 PR、分支與最新回歸 | [整合現況](INTEGRATION_STATUS.md) | [10-31 審查與修正](REVIEW_20261031.md)、[床位權限修正](BED_SCOPE_FIX.md) |
 | 向機構確認職責與流程 | [機構流程訪談包](institution-workflow/README.md) | [角色權限候選](institution-workflow/ROLE_AND_PERMISSION_MATRIX.md)、[下一輪決策](institution-workflow/NEXT_MVP_DECISION.md) |
 | 維護監控、API 或資料遷移 | [監控文件](monitor/README.md) | [API](monitor/API.md)、[遷移](monitor/MIGRATION.md)、[穩定性修正](monitor/HARDENING.md) |
 | 安排後續開發 | [開發規劃](ROADMAP.md) | 先用 UAT 與機構 SOP 補齊決策證據 |

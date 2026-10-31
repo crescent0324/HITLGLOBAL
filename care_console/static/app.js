@@ -262,7 +262,7 @@ async function refreshMonitor(cursor=monitorState.cursor,{background=false}={}) 
   }
 }
 function monitorEvent(event) {
-  const names={...actionNames,case_opened:'建立人工案件',message_received:'收到本機模擬訊息',legacy_snapshot:'升級前最新狀態快照',role_split_pending:'IT 職責分離，重新等待護理師接手'};
+  const names={...actionNames,case_opened:'建立人工案件',message_received:'收到本機模擬訊息',legacy_snapshot:'升級前最新狀態快照',role_split_pending:'IT 職責分離，重新等待護理師接手',owner_access_revoked:'原接手者失去權限，重新等待接手'};
   const p=event.payload,progress=p.progress||p;
   const details=[progress.summary&&`已處理：${progress.summary}`,progress.next_action&&`下一步：${progress.next_action}`,progress.waiting_for&&`待確認：${progress.waiting_for}`,p.to_user&&`指定接班帳號：${p.to_user}`,p.from_user&&`原責任帳號：${p.from_user}`,p.operator_id&&`責任帳號：${p.operator_id}`,p.note&&`結案結果：${p.note}`,p.close_note&&`結案結果：${p.close_note}`].filter(Boolean);
   return `<article class="monitor-event"><header><strong>${esc(names[event.action]||event.action)}</strong><time>${esc(monitorDate(event.created_at))}</time></header><small>${esc(event.actor_name||event.actor||'系統紀錄')}${event.actor?`（${esc(event.actor)}）`:''}${p.legacy?' · 舊版紀錄':''}</small>${details.map(t=>`<p>${esc(t)}</p>`).join('')}</article>`;
@@ -410,7 +410,7 @@ function renderWorkflow(data,owns) {
   $('#case-history').innerHTML=(w?.history||[]).map(item=>`<div class="history-item"><strong>案件 #${item.id} · ${esc(date(item.closed_at))}</strong><p>處理者：${esc(item.operator||'未記錄')}</p>${item.summary?`<p>已處理：${esc(item.summary)}</p>`:''}<p>結案紀錄：${esc(item.close_note||'未記錄')}</p></div>`).join('')||'<p class="muted small">尚無已結案紀錄。</p>';
 }
 function progressPayload() {return {summary:$('#progress-summary').value,next_action:$('#progress-next').value,waiting_for:$('#progress-waiting').value,revision:appState.noteRevision};}
-function casePayload(payload={}) {return {...payload,conversation_id:appState.cid,case_id:appState.detail?.case?.id};}
+function casePayload(payload={}) {return {...payload,conversation_id:appState.cid,case_id:appState.detail?.case?.id,seen_message_id:appState.detail?.case?.seen_message_id};}
 async function caseAction(action,payload={}) {
   await api(`/api/residents/${appState.rid}/case/${action}`,casePayload(payload));await loadResident();await refreshBoard();
 }

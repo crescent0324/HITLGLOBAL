@@ -49,6 +49,10 @@ class CareConsoleTests(unittest.TestCase):
             data = dict(data)
             data.setdefault('conversation_id', thread)
             data.setdefault('case_id', source['case']['id'] if source['case'] else 0)
+            # Act like a client that has just loaded the latest messages.
+            with self.service.db() as db:
+                data.setdefault('seen_message_id', db.execute(
+                    'SELECT COALESCE(MAX(id),0) FROM messages WHERE conversation_id=?', (thread,)).fetchone()[0])
         return self.client.post(path, json=data, headers={'X-CSRF-Token':self.csrf})
 
     def detail(self, rid='R001'):
@@ -804,5 +808,138 @@ class CareConsoleTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.service.deliver(thread,'不得對外送出','human','operator')
         self.assertEqual(self.service.transport.calls,[])
+
+    def test_stale_view_cannot_close_or_reply_after_new_message(self):
+        self.login();self.line_send('轉人工')
+        self.assertEqual(self.post('/api/residents/R001/case/claim',{}).status_code,200)
+        seen=self.detail()['case']['seen_message_id']
+        self.line_send('長輩剛剛倒地')
+        for action,payload in [('resolve',{'note':'依舊畫面結案'}),('reply',{'text':'依舊畫面回覆'})]:
+            for stale in [seen,None]:
+                response=self.post('/api/residents/R001/case/'+action,payload|{'seen_message_id':stale})
+                self.assertEqual(response.status_code,409,(action,stale,response.get_json()))
+        case=self.detail()['case']
+        self.assertEqual((case['status'],case['trigger_risk']),('claimed','高'))
+        self.assertGreater(case['seen_message_id'],seen)
+        self.assertEqual(self.post('/api/residents/R001/case/resolve',{'note':'已查看最新訊息後結案'}).status_code,200)
+
+    def test_revoking_case_owner_returns_case_to_pending(self):
+        self.login();self.line_send('轉人工')
+        self.assertEqual(self.post('/api/residents/R001/case/claim',{}).status_code,200)
+        thread=self.selected_threads['R001']
+        self.login('admin')
+        self.assertEqual(self.post('/api/bindings',dict(user_id='nurse',resident_id='R001',allowed=False)).status_code,200)
+        source=self.service.detail(thread)
+        self.assertEqual((source['case']['status'],source['case']['operator_id'],source['state']),('pending',None,'awaiting_takeover'))
+        with self.service.db() as db:
+            db.execute('ATTACH DATABASE ? AS care',(str(self.app.extensions['care_store'].path),))
+            actions=[r[0] for r in db.execute('SELECT action FROM care.case_activity WHERE case_id=?',(source['case']['id'],))]
+        self.assertIn('owner_access_revoked',actions)
+        self.login('nurse2')
+        self.assertEqual(self.post('/api/residents/R001/case/claim',{}).status_code,200)
+        self.assertEqual(self.post('/api/residents/R001/case/reply',{'text':'虛構：由有權護理師接續'}).status_code,200)
+
+    def test_logout_ends_a_copied_session_cookie(self):
+        self.login('caregiver')
+        cookie=self.client.get_cookie('care_console_session').value
+        self.assertEqual(self.client.get('/api/board').status_code,200)
+        self.assertEqual(self.post('/api/logout',{}).status_code,200)
+        self.client.set_cookie('care_console_session',cookie)
+        self.assertEqual(self.client.get('/api/board').status_code,401)
+
+    def test_manual_reports_cannot_reserve_facility_import_ids(self):
+        self.login('caregiver')
+        self.assertEqual(self.post('/api/residents/R001/observation',self.row(source_record_id='HIS-0001')).status_code,200)
+        self.login()
+        ids=[o['source_record_id'] for o in self.detail()['observations']]
+        self.assertNotIn('HIS-0001',ids)
+        self.assertTrue(any(i.startswith('MANUAL-') for i in ids))
+        result=self.imported(self.row(source_record_id='HIS-0001'))
+        self.assertEqual(result.status_code,200,result.get_json())
+        self.assertEqual(result.get_json()['inserted'],1)
+        reserved=self.imported(self.row(source_record_id='manual-123'))
+        self.assertEqual(reserved.status_code,400)
+        self.assertIn('第 2 列',reserved.get_json()['error'])
+        conflict=self.imported(self.row(source_record_id='TEST-NEW'),self.row(source_record_id='HIS-0001',care_note='內容不同'))
+        self.assertEqual(conflict.status_code,400)
+        self.assertIn('第 3 列',conflict.get_json()['error'])
+
+    def age_jobs(self, thread, seconds=700):
+        old=(datetime.now(timezone.utc)-timedelta(seconds=seconds)).isoformat(timespec='seconds')
+        with self.service.db() as db:
+            db.execute('UPDATE generations SET created_at=? WHERE conversation_id=?',(old,thread))
+
+    def test_expired_queued_job_fails_visibly_without_calling_model(self):
+        self.login('nurse')
+        self.service.save_ai_settings({'ai_enabled':True,'daily_call_limit':200})
+        self.line_send('想了解喘息服務')
+        thread=self.selected_threads['R001']
+        self.assertEqual(self.service.detail(thread)['generations'][0]['status'],'queued')
+        self.age_jobs(thread)
+        calls=[]
+        self.provider.generate=lambda config,payload:calls.append(1)
+        self.assertTrue(self.service.process_one())
+        detail=self.service.detail(thread)
+        self.assertEqual(calls,[])
+        self.assertEqual(detail['generations'][0]['status'],'failed')
+        self.assertEqual(detail['case']['origin'],'generation_failure')
+        self.assertEqual(detail['messages'][-1]['source'],'generation_failure')
+        self.assertFalse(any(m['source']=='grounded_generation' for m in detail['messages']))
+
+    def test_job_expiring_during_model_call_is_not_sent(self):
+        self.login('nurse')
+        self.service.save_ai_settings({'ai_enabled':True,'daily_call_limit':200})
+        self.line_send('想了解喘息服務')
+        thread=self.selected_threads['R001']
+        original=self.provider.generate
+        def slow(config,payload):
+            self.age_jobs(thread)
+            return original(config,payload)
+        self.provider.generate=slow
+        self.service.process_one()
+        detail=self.service.detail(thread)
+        self.assertEqual(detail['generations'][0]['status'],'failed')
+        self.assertEqual(detail['case']['origin'],'generation_failure')
+        self.assertFalse(any(m['source']=='grounded_generation' for m in detail['messages']))
+
+    def test_expired_draft_cannot_be_approved_and_is_closed(self):
+        self.login('nurse')
+        self.service.save_ai_settings({'ai_enabled':True,'daily_call_limit':200})
+        self.line_send('我剛量血壓是165/100，目前沒有不舒服')
+        thread=self.selected_threads['R001']
+        self.service.process_one()
+        drafts=[j for j in self.service.detail(thread)['generations'] if j['status']=='draft']
+        self.assertTrue(drafts,self.service.detail(thread)['generations'])
+        self.assertEqual(self.post('/api/residents/R001/case/claim',{}).status_code,200)
+        self.age_jobs(thread)
+        response=self.post('/api/residents/R001/case/approve',dict(job_id=drafts[0]['id'],text='虛構核准',note='虛構審閱'))
+        self.assertEqual(response.status_code,400)
+        self.assertIn('超過有效時間',response.get_json()['error'])
+        job=next(j for j in self.service.detail(thread)['generations'] if j['id']==drafts[0]['id'])
+        self.assertEqual(job['status'],'cancelled')
+        self.assertFalse(any(m['source']=='reviewed_generation' for m in self.service.detail(thread)['messages']))
+
+    def test_worker_closes_expired_drafts(self):
+        self.login('nurse')
+        self.service.save_ai_settings({'ai_enabled':True,'daily_call_limit':200})
+        self.line_send('我剛量血壓是165/100，目前沒有不舒服')
+        thread=self.selected_threads['R001']
+        self.service.process_one()
+        self.age_jobs(thread)
+        self.service.process_one()
+        self.assertFalse([j for j in self.service.detail(thread)['generations'] if j['status']=='draft'])
+        self.assertEqual(self.detail()['drafts'][0]['status'],'cancelled')
+
+    def test_line_protocol_errors_are_reported_as_uncertain_delivery(self):
+        import http.client
+        from service import LineTransport, DeliveryError
+        class Settings:
+            def snapshot(self):
+                return {'line_enabled':True,'access_token':'test-token-not-real'}
+        transport=LineTransport(Settings())
+        for exc in [http.client.IncompleteRead(b''),http.client.BadStatusLine('x')]:
+            with patch('urllib.request.urlopen',side_effect=exc):
+                with self.assertRaises(DeliveryError):
+                    transport.send('push','U-test','虛構訊息',retry_key='k')
 
 if __name__=='__main__':unittest.main(verbosity=2)

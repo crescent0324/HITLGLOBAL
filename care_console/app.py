@@ -8,7 +8,8 @@ import secrets
 import sys
 import threading
 import time
-from flask import Flask, jsonify, request, session, render_template, Response
+from datetime import datetime, timezone
+from flask import Flask, jsonify, request, session, render_template, Response, g
 from werkzeug.exceptions import HTTPException
 
 BASE = Path(__file__).resolve().parent
@@ -64,9 +65,28 @@ def create_app(data_dir=None, provider=None):
     failures = {}
     failure_lock = threading.Lock()
 
+    with store.db() as db:
+        # Server-side record of each web login, so logout ends the session even if a copy
+        # of the signed cookie is kept.
+        db.execute('''CREATE TABLE IF NOT EXISTS web_sessions(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,ended_at TEXT)''')
+    session_lifetime = app.config['PERMANENT_SESSION_LIFETIME']
+
+    def session_valid():
+        sid, uid = session.get('sid'), session.get('uid')
+        if not isinstance(sid, str) or not uid:
+            return False
+        with store.db() as db:
+            row = db.execute('SELECT user_id,created_at,ended_at FROM web_sessions WHERE id=?', (sid,)).fetchone()
+        if not row or row['user_id'] != uid or row['ended_at']:
+            return False
+        return datetime.now(timezone.utc) - datetime.fromisoformat(row['created_at']) <= session_lifetime
+
     def user():
-        account = store.user(session.get('uid'))
-        return account if account and account['role'] in STAFF else None
+        if 'care_user' not in g:
+            account = store.user(session.get('uid')) if session_valid() else None
+            g.care_user = account if account and account['role'] in STAFF else None
+        return g.care_user
 
     def json_body():
         data = request.get_json(silent=True)
@@ -161,13 +181,21 @@ def create_app(data_dir=None, provider=None):
         with failure_lock:
             failures.pop(key, None)
         session.clear()
-        session.update(uid=account['id'], csrf=secrets.token_hex(32))
+        sid = secrets.token_hex(32)
+        with store.db() as db:
+            db.execute('INSERT INTO web_sessions(id,user_id,created_at) VALUES(?,?,?)', (sid, account['id'], stamp()))
+        session.update(uid=account['id'], sid=sid, csrf=secrets.token_hex(32))
         session.permanent = True
+        g.pop('care_user', None)
         return jsonify(user=account, csrf=session['csrf'])
 
     @app.post('/api/logout')
     def logout():
+        if isinstance(session.get('sid'), str):
+            with store.db() as db:
+                db.execute('UPDATE web_sessions SET ended_at=? WHERE id=? AND ended_at IS NULL', (stamp(), session['sid']))
         session.clear()
+        g.pop('care_user', None)
         return jsonify(ok=True)
 
     @app.get('/api/board')
@@ -220,6 +248,10 @@ def create_app(data_dir=None, provider=None):
             selected = conversations.describe(current, rid, request.args.get('conversation_id'))
             service.enroll(selected['id'], 'simulation')
             source = service.detail(selected['id'])
+            seen_message_id = None
+            if source['case']:
+                with service.db() as db:
+                    seen_message_id = workflow.latest_message(db, source['case'])
         authors = store.authors(current, rid)
         messages = [dict(m) | {'author': authors.get(m['event_id'], {}).get('display_name'),
                               'input_channel': authors.get(m['event_id'], {}).get('channel')}
@@ -228,6 +260,8 @@ def create_app(data_dir=None, provider=None):
         case_view = {k: case[k] for k in ('id', 'status', 'trigger_risk', 'origin', 'operator', 'created_at')} if case else None
         if case_view:
             case_view.update(workflow.identity(case))
+            # The client echoes this back so replies and closures are based on the latest messages.
+            case_view['seen_message_id'] = seen_message_id
         drafts = []
         if current['role'] in ASSESSORS:
             drafts = [{k: j.get(k) for k in ('id', 'status', 'mode', 'response_text', 'error', 'created_at')}
@@ -287,8 +321,13 @@ def create_app(data_dir=None, provider=None):
     @app.post('/api/residents/<rid>/observation')
     @roles(*CLINICAL_STAFF)
     def observation(rid):
+        current, data = user(), json_body()
+        if current['role'] not in ASSESSORS:
+            # Caregiver reports get a server-generated id, so they cannot occupy an id that a
+            # later facility import needs.
+            data.pop('source_record_id', None)
         with service.lock:
-            added = store.add_observation(user(), rid, json_body())
+            added = store.add_observation(current, rid, data)
         return jsonify(added=added)
 
     @app.post('/api/residents/<rid>/case/<action>')
@@ -307,6 +346,13 @@ def create_app(data_dir=None, provider=None):
                 raise Conflict('案件已變更，請更新紀錄後再操作。')
             if action in {'reply', 'approve'} and not selected['active']:
                 raise PermissionError('聯絡人配對已撤銷，不能回覆或核准草稿。')
+            if action in {'reply', 'resolve'}:
+                # New messages (including a risk escalation) join the same open case, so the
+                # case id alone cannot tell whether the staff member has seen them.
+                with service.db() as db:
+                    latest = workflow.latest_message(db, case)
+                if type(data.get('seen_message_id')) is not int or data['seen_message_id'] != latest:
+                    raise Conflict('此對話有新訊息尚未查看，請按「更新紀錄」確認最新內容後再操作。')
             if action == 'claim':
                 workflow.claim(current, rid, case['id'], thread_id)
             elif action == 'accept_handoff':
@@ -412,6 +458,7 @@ def create_app(data_dir=None, provider=None):
         with service.lock:
             store.grant(user(), data.get('user_id'), data.get('resident_id'), data['allowed'])
             if not data['allowed']:
+                workflow.release_revoked_owner(user(), data['user_id'], data['resident_id'])
                 with store.db() as db:
                     threads = db.execute('SELECT id FROM contact_conversations WHERE resident_id=? AND contact_id=?',
                                          (data['resident_id'],data['user_id'])).fetchall()
