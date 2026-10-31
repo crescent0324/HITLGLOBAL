@@ -98,7 +98,13 @@ class ResearchService(Service):
     def should_review_low(self, text, result):
         return bool(PERSONAL_HEALTH.search(text))
 
-    def _eligible(self, db, job):
+    def _expired(self, job):
+        return False
+
+    def _expire_drafts(self, db):
+        pass
+
+    def _eligible(self, db, job, check_age=True):
         latest = db.execute('SELECT id FROM events WHERE conversation_id=? ORDER BY rowid DESC LIMIT 1', (job['conversation_id'],)).fetchone()
         if not latest or latest['id'] != job['event_id']:
             return False
@@ -116,13 +122,25 @@ class ResearchService(Service):
         with self.lock:
             config = self.settings.snapshot()
             with self.db() as db:
+                self._expire_drafts(db)
                 row = db.execute("SELECT * FROM generations WHERE status='queued' ORDER BY id LIMIT 1").fetchone()
                 if not row:
                     return False
                 job = dict(row)
-                if not self._eligible(db, job) or job['config_revision'] != config['config_revision'] or not config['ai_enabled']:
+                if not self._eligible(db, job, check_age=False) or job['config_revision'] != config['config_revision'] or not config['ai_enabled']:
                     db.execute("UPDATE generations SET status='cancelled',error=?,updated_at=? WHERE id=?", ('權限、設定或對話已變更。', now(), job['id']))
                     return True
+                if self._expired(job):
+                    # A job that waited too long is a failure the user and staff must see,
+                    # not a silent cancellation.
+                    self._fail(db, job, '回覆工作等待逾時，未呼叫模型。')
+                    expired = True
+                else:
+                    expired = False
+            if expired:
+                self.deliver(job['conversation_id'], '這則訊息等待處理逾時，尚未產生回答。訊息已列入人工確認清單。', 'auto', 'generation_failure', event_id=job['event_id'])
+                return True
+            with self.db() as db:
                 day = datetime.now(timezone(timedelta(hours=8))).date().isoformat()
                 count = db.execute('SELECT COUNT(*) FROM model_calls WHERE day=?', (day,)).fetchone()[0]
                 if count >= config['daily_call_limit']:
@@ -156,11 +174,13 @@ class ResearchService(Service):
                 current = db.execute('SELECT * FROM generations WHERE id=?', (job['id'],)).fetchone()
                 db.execute('UPDATE generations SET report=?,updated_at=? WHERE id=?', (json.dumps(report, ensure_ascii=False) if report else None, now(), job['id']))
                 config_now = self.settings.snapshot()
-                if current['status'] != 'running' or not self._eligible(db, job) or not config_now['ai_enabled'] or config_now['config_revision'] != job['config_revision']:
+                if current['status'] != 'running' or not self._eligible(db, job, check_age=False) or not config_now['ai_enabled'] or config_now['config_revision'] != job['config_revision']:
                     cancel_note = ('處理期間權限或對話變更，離線替代服務結果未送出。' if getattr(self, 'integration_mode', None) == 'offline'
                                    else '生成期間權限或對話變更，結果未送出；已發出的 API 請求可能計費。')
                     db.execute("UPDATE generations SET status='cancelled',error=?,updated_at=? WHERE id=?", (cancel_note, now(), job['id']))
                     return True
+                if not problem and self._expired(current):
+                    problem = '模型回覆超過有效時間，結果未送出。'
                 if problem:
                     self._fail(db, job, problem)
                 else:
@@ -211,8 +231,17 @@ class ResearchService(Service):
         with self.lock:
             with self.db() as db:
                 job = db.execute('SELECT * FROM generations WHERE id=?', (job_id,)).fetchone()
-                if not job or job['status'] != 'draft' or not self._eligible(db, job):
+                if not job or job['status'] != 'draft' or not self._eligible(db, job, check_age=False):
                     raise ValueError('草稿已失效、已處理，或目前不能送出。')
+                expired = not reject and self._expired(job)
+                if expired:
+                    # An expired draft may still be rejected, but never approved.
+                    db.execute("UPDATE generations SET status='cancelled',error=?,updated_at=? WHERE id=?",
+                               ('草稿超過有效時間，已失效；請依最新對話人工回覆。', now(), job_id))
+                    self.log(db, job['conversation_id'], 'draft_expired', f'job={job_id}')
+            if expired:
+                raise ValueError('草稿超過有效時間，已失效；請依最新對話人工回覆。')
+            with self.db() as db:
                 case = db.execute("SELECT * FROM cases WHERE conversation_id=? AND status='claimed'", (job['conversation_id'],)).fetchone()
                 if not case:
                     raise ValueError('請先接手事件，再審閱草稿。')

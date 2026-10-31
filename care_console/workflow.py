@@ -228,6 +228,32 @@ class StaffWorkflow:
             self.log(db,user,'handoff_cancelled',rid,'case='+str(case['id']))
             self.activity(db,case['id'],user,'handoff_cancelled')
 
+    def release_revoked_owner(self, actor, uid, rid):
+        """After a staff member loses access to a resident, their open cases return to pending.
+
+        Without this, the case stays claimed by someone who can no longer act on it, while the
+        family keeps being told that staff are handling the conversation.
+        """
+        with self.transaction() as db:
+            threads = ['demo-care-'+rid] + [r['id'] for r in db.execute(
+                'SELECT id FROM care.contact_conversations WHERE resident_id=?', (rid,))]
+            marks = ','.join('?' * len(threads))
+            owned = [dict(r) for r in db.execute(
+                f"SELECT * FROM cases WHERE status='claimed' AND operator_id=? AND conversation_id IN ({marks})",
+                (uid, *threads))]
+            for case in owned:
+                db.execute("UPDATE cases SET status='pending',operator=NULL,operator_id=NULL,claimed_at=NULL WHERE id=?", (case['id'],))
+                db.execute("UPDATE care.handoff_requests SET status='cancelled' WHERE case_id=? AND status='pending'", (case['id'],))
+                self.service.cancel_jobs(db, case['conversation_id'], '原接手者已失去此住民權限，案件須由有權人員重新接手。')
+                self.service.log(db, case['conversation_id'], 'case_owner_access_revoked', 'case='+str(case['id'])+'; previous_operator_id='+uid)
+                self.activity(db, case['id'], actor, 'owner_access_revoked', {'previous_operator_id': uid})
+                self.log(db, actor, 'case_returned_to_pending', rid, 'case='+str(case['id'])+'; previous_operator_id='+uid)
+            incoming = db.execute("SELECT id,case_id FROM care.handoff_requests WHERE to_user=? AND resident_id=? AND status='pending'",
+                                  (uid, rid)).fetchall()
+            for h in incoming:
+                db.execute("UPDATE care.handoff_requests SET status='cancelled' WHERE id=?", (h['id'],))
+                self.activity(db, h['case_id'], actor, 'handoff_cancelled', {'reason': 'target_access_revoked', 'to_user': uid})
+
     def resolve(self, user, rid, note, conversation_id=None):
         self.require_staff(user,rid,True)
         with self.transaction() as db:

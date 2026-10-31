@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import http.client
 import json
 import secrets
 import sqlite3
@@ -94,7 +95,7 @@ class LineTransport:
             if kind == "push" and exc.code == 409 and exc.headers.get("x-line-accepted-request-id"):
                 return
             raise DeliveryError(f"LINE API 回傳 HTTP {exc.code}；尚未確認收件者收到訊息。") from None
-        except (error.URLError, TimeoutError, OSError):
+        except (error.URLError, TimeoutError, OSError, http.client.HTTPException):
             raise DeliveryError("LINE API 連線失敗或逾時，送出結果不確定；請先核對 LINE 對話。") from None
 
 

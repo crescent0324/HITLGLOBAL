@@ -104,8 +104,8 @@ class ScopedLiveService(LiveService):
         self.conversations = conversations
         super().__init__(directory, **kwargs)
 
-    def _eligible(self, db, job):
-        return self.conversations.delivery_allowed(job['conversation_id']) and super()._eligible(db, job)
+    def _eligible(self, db, job, check_age=True):
+        return self.conversations.delivery_allowed(job['conversation_id']) and super()._eligible(db, job, check_age)
 
     def deliver(self, participant, *args, **kwargs):
         with self.lock:

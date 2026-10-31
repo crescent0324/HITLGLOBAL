@@ -126,8 +126,8 @@ class ModelContextMixin:
         db.execute('INSERT INTO generation_contexts VALUES(?,?,?,?,?)',
                    (job_id,event_id,participant,json.dumps(request['context'],ensure_ascii=False),now()))
 
-    def _eligible(self, db, job):
-        if not super()._eligible(db,job):
+    def _eligible(self, db, job, check_age=True):
+        if not super()._eligible(db,job,check_age):
             return False
         meta=db.execute('SELECT metadata_json FROM generation_contexts WHERE generation_id=?',(job['id'],)).fetchone()
         if not meta:
@@ -135,7 +135,21 @@ class ModelContextMixin:
         record=json.loads(meta['metadata_json']);age=age_seconds(job['created_at'])
         return (record['version']==VERSION and record['prompt_version']==PROMPT_VERSION
                 and record['knowledge_hash']==self.knowledge.sha256
-                and age is not None and 0<=age<=TTL_SECONDS)
+                and (not check_age or (age is not None and 0<=age<=TTL_SECONDS)))
+
+    def _expired(self, job):
+        age=age_seconds(job['created_at'])
+        return age is None or not 0<=age<=TTL_SECONDS
+
+    def _expire_drafts(self, db):
+        # Drafts past their validity window can no longer be approved; close them visibly
+        # instead of leaving them listed as reviewable.
+        from service import now
+        for job in db.execute("SELECT * FROM generations WHERE status='draft'").fetchall():
+            if self._expired(job):
+                db.execute("UPDATE generations SET status='cancelled',error=?,updated_at=? WHERE id=?",
+                           ('草稿超過有效時間，已失效；請依最新對話人工回覆。',now(),job['id']))
+                self.log(db,job['conversation_id'],'draft_expired',f"job={job['id']}")
 
     def deliver(self, participant, text, actor, source, event_id=None, reply_token=None):
         result=super().deliver(participant,text,actor,source,event_id=event_id,reply_token=reply_token)

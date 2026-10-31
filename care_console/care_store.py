@@ -252,13 +252,18 @@ class CareStore:
                     raise ValueError('CSV 欄位數不符。')
                 if not row['source_record_id'].strip():
                     raise ValueError('來源紀錄識別碼不可留白。')
+                if row['source_record_id'].strip().upper().startswith('MANUAL-'):
+                    raise ValueError('MANUAL- 開頭保留給工作人員手動回報，請使用院內系統的來源識別碼。')
                 normalized.append(self.validated_observation(user, row['resident_code'], row))
             except (ValueError, PermissionError) as exc:
                 raise ValueError(f'第 {i} 列：{exc}') from None
         inserted = 0
         with self.db() as db:
-            for row in normalized:
-                inserted += self._insert_observation(db, user, row, '院內測試 CSV 匯入')
+            for i, row in enumerate(normalized, 2):
+                try:
+                    inserted += self._insert_observation(db, user, row, '院內測試 CSV 匯入')
+                except ValueError as exc:
+                    raise ValueError(f'第 {i} 列：{exc}') from None
             self.log(db, user, 'csv_imported', None, f'inserted={inserted}; skipped={len(rows)-inserted}; demo=true')
         return {'inserted': inserted, 'skipped': len(rows) - inserted}
 
