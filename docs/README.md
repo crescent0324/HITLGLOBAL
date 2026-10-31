@@ -4,6 +4,7 @@
 
 | 你要做什麼 | 先讀 | 需要時再查 |
 | --- | --- | --- |
+| 第一次接觸本專案 | [一頁看懂](OVERVIEW.md) | 本頁其他入口 |
 | 啟動系統、查看角色或操作 | [操作說明](../care_console/README.md) | 同頁的交班、資料、備份與測試說明 |
 | 主持第一場虛構資料試用 | [UAT 入口](uat/README.md) | [快速開始](uat/QUICK_START.md)、[U01～U20 任務](uat/TEST_SCENARIOS.md) |
 | 確認 PR、分支與最新回歸 | [整合現況](INTEGRATION_STATUS.md) | [床位權限修正](BED_SCOPE_FIX.md) |

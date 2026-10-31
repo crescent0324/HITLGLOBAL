@@ -8,6 +8,7 @@
 
 | 你要做什麼 | 閱讀入口 |
 | --- | --- |
+| 第一次接觸，想知道這是什麼、做到哪裡 | [一頁看懂 HITLGLOBAL](docs/OVERVIEW.md) |
 | 啟動系統、看帳號權限與操作流程 | [操作說明](care_console/README.md) |
 | 主持一場使用虛構資料的機構試用 | [UAT 試用套件](docs/uat/README.md) |
 | 找規格、API、開發規劃或歷史證據 | [文件總覽](docs/README.md) |

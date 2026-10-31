@@ -10,8 +10,8 @@ from generation import Knowledge, OpenAIProvider, ModelError, PROMPT_VERSION, RE
 SCOPE_VERSION = 'service-information-scope-0.2'
 # This limits generation scope; it does NOT relabel the frozen risk prediction.
 PERSONAL_HEALTH = re.compile(r'血壓|血糖|心跳|體溫|吃藥|服藥|用藥|停藥|調藥|劑量|症狀|不舒服|胸|痛|喘不|喘到|呼吸|暈|無力|沒有力|倒下|叫不|叫都|昏|流血|嘔吐|發燒|麻木|嘴歪|說話不|吞嚥|抽搐|受傷|跌倒|癱|中風|心臟病|癲癇|糖尿病|高血壓|低血壓|急救|治療|診斷')
-MENU = '可以詢問長照服務申請方式、服務類別與喘息服務。此研究資料集尚未涵蓋你的問題，沒有產生模型回覆。若需研究操作人員協助，請傳送「轉人工」。'
-UNAVAILABLE = '模型回覆目前未啟用，尚未產生 AI 回答。可以傳送「轉人工」聯絡研究操作人員；本帳號沒有醫療人員值班。'
+MENU = '可以詢問長照服務申請方式、服務類別與喘息服務。目前的服務資料尚未涵蓋你的問題，沒有產生模型回覆。若需院內工作人員協助，請傳送「轉人工」。'
+UNAVAILABLE = '模型回覆目前未啟用，尚未產生 AI 回答。可以傳送「轉人工」聯絡院內工作人員；本帳號不保證即時有人回覆。'
 WAIT_REVIEW = '訊息已列入人工確認清單。系統不會自行解讀你的數值或症狀，也不提供診斷、調藥或治療決策。目前尚不代表已有人接手。'
 
 
@@ -56,7 +56,7 @@ class ResearchService(Service):
             with self.db() as db:
                 case = self._open_case(db, participant, result.risk, 'scope_review')
                 self.log(db, participant, 'generation_scope_restricted', f'event={event_id}; policy={getattr(self,"scope_version",SCOPE_VERSION)}; frozen_risk={result.risk}')
-            return '此訊息涉及健康狀況，超出本版自動長照服務問答範圍，已列入人工確認。規則分級不代表已確認健康狀況；本帳號沒有醫療人員值班。', 'scope_notice', self.operating_state(case)
+            return '此訊息涉及健康狀況，超出本版自動長照服務問答範圍，已列入人工確認。規則分級不代表已確認健康狀況；本帳號不保證即時有人回覆。', 'scope_notice', self.operating_state(case)
         if state == 'awaiting_review' and result.risk == '低':
             return WAIT_REVIEW, 'review_notice', state
         if state == 'awaiting_review':
@@ -133,7 +133,7 @@ class ResearchService(Service):
                     db.execute("UPDATE generations SET status='running',updated_at=? WHERE id=?", (now(), job['id']))
                     limited = False
             if limited:
-                self.deliver(job['conversation_id'], '已達本機測試呼叫上限，未產生模型回答。訊息已交由研究操作人員確認。', 'auto', 'generation_failure', event_id=job['event_id'])
+                self.deliver(job['conversation_id'], '已達本機測試呼叫上限，未產生模型回答。訊息已交由院內工作人員確認。', 'auto', 'generation_failure', event_id=job['event_id'])
                 return True
         # No state lock during model networking. High risk and human actions remain available.
         report, formatted, problem = None, None, None
